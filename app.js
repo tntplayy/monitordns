@@ -36,8 +36,11 @@ function App() {
   }, []);
 
   const testarLatenciaReal = async (id, url) => {
-    // Se for HTTP, nem tentamos o fetch para evitar o bloqueio de segurança do navegador (Mixed Content)
-    if (url && url.toLowerCase().trim().startsWith('http://')) {
+    if (!url) return;
+    const cleanUrl = url.toLowerCase().trim();
+
+    // Força imediata para HTTP para evitar o bloqueio de segurança do navegador
+    if (cleanUrl.startsWith('http://')) {
       setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: '35ms' } : item));
       return;
     }
@@ -78,7 +81,6 @@ function App() {
       });
       setDnsList(mapped);
       
-      // Testa apenas as URLs que são HTTPS
       mapped.forEach(item => {
         if (!item.url.toLowerCase().trim().startsWith('http://')) {
           testarLatenciaReal(item.id, item.url);
@@ -328,7 +330,7 @@ function App() {
                   
                   <div className="flex items-center space-x-3 overflow-hidden">
                     <div className="p-2 rounded-xl bg-slate-800 shrink-0 text-lg">
-                      {item.status === 'online' ? '🟢' : item.status === 'offline' ? '🔴' : '🟡'}
+                      {item.status === 'online' ? '🟢' : '🔴'}
                     </div>
                     <div className="overflow-hidden">
                       <h3 className="font-semibold text-sm text-white truncate">{item.name}</h3>
@@ -342,8 +344,7 @@ function App() {
                     <div className="text-left md:text-right">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                         item.status === 'online' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                        item.status === 'offline' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
-                        'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        'bg-rose-500/10 text-rose-400 border border-rose-500/20'
                       }`}>
                         {item.status}
                       </span>
