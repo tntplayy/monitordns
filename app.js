@@ -19,6 +19,11 @@ function App() {
   const [editingDns, setEditingDns] = useState(null);
   const [deleteModalId, setDeleteModalId] = useState(null);
 
+  // Estados para o Modal de Detalhes / Gráfico UptimeRobot
+  const [detailDns, setDetailDns] = useState(null);
+  const [dnsLogs, setDnsLogs] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -52,10 +57,21 @@ function App() {
         latency: '120ms'
       }));
       setDnsList(mapped);
+      // Registra um log inicial automático ao carregar
+      mapped.forEach(item => registarLog(item.id, 'online', '120ms'));
     } else {
       setDnsList([]);
     }
     setLoadingDns(false);
+  };
+
+  const registarLog = async (monitorId, status, latency) => {
+    if (!supabase) return;
+    await supabase.from('dns_logs').insert([{
+      monitor_id: monitorId,
+      status: status,
+      latency: latency
+    }]);
   };
 
   useEffect(() => {
@@ -64,13 +80,24 @@ function App() {
     }
   }, [session]);
 
-  useEffect(() => {
-    if (window.lucide) {
-      setTimeout(() => {
-        window.lucide.createIcons();
-      }, 50);
+  const carregarLogsDns = async (dns) => {
+    setDetailDns(dns);
+    setLoadingLogs(true);
+    const { data, error } = await supabase
+      .from('dns_logs')
+      .select('*')
+      .eq('monitor_id', dns.id)
+      .order('created_at', { ascending: false })
+      .limit(30); // Últimos 30 registos para formar o gráfico
+
+    if (error) {
+      console.error('Erro ao buscar logs:', error);
+      setDnsLogs([]);
+    } else {
+      setDnsLogs(data || []);
     }
-  }, [session, dnsList, modalOpen, deleteModalId]);
+    setLoadingLogs(false);
+  };
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
@@ -98,7 +125,8 @@ function App() {
     setSession(null);
   };
 
-  const copiarUrl = (url) => {
+  const copiarUrl = (url, e) => {
+    e.stopPropagation();
     if (!url) return;
     navigator.clipboard.writeText(url).then(() => {
       alert(`URL "${url}" copiada para a área de transferência!`);
@@ -141,7 +169,8 @@ function App() {
     setEditingDns(null);
   };
 
-  const handleDeleteDns = async (id) => {
+  const handleDeleteDns = async (id, e) => {
+    if (e) e.stopPropagation();
     if (!supabase) return;
     const { error } = await supabase
       .from('dns_monitors')
@@ -152,6 +181,7 @@ function App() {
       alert('Erro ao excluir: ' + error.message);
     } else {
       setDnsList(prev => (Array.isArray(prev) ? prev : []).filter(d => d.id !== id));
+      if (detailDns && detailDns.id === id) setDetailDns(null);
     }
     setDeleteModalId(null);
   };
@@ -168,8 +198,8 @@ function App() {
       <div className="flex min-h-screen items-center justify-center bg-[#090d16] p-4 font-sans">
         <div className="w-full max-w-md bg-[#0d1322] border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
           <div className="text-center space-y-2">
-            <div className="inline-flex p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <i data-lucide="globe" className="w-8 h-8"></i>
+            <div className="inline-flex p-3 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-2xl">
+              🌐
             </div>
             <h1 className="text-2xl font-bold text-white tracking-wider">DNS <span className="text-emerald-500">MONITOR</span></h1>
             <p className="text-xs text-slate-400">Entre com sua conta para gerenciar os servidores</p>
@@ -220,8 +250,8 @@ function App() {
         
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#0d1322] border border-slate-800/60 p-5 rounded-2xl gap-4 shadow-xl">
           <div className="flex items-center space-x-3">
-            <div className="bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 text-emerald-400">
-              <i data-lucide="globe" className="w-6 h-6"></i>
+            <div className="bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 text-xl">
+              🌐
             </div>
             <div>
               <h1 className="font-bold text-lg text-white">DNS Monitor</h1>
@@ -234,7 +264,7 @@ function App() {
               title="Sair"
               className="p-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl transition-all"
             >
-              <i data-lucide="log-out" className="w-4 h-4"></i>
+              🚪 Sair
             </button>
           </div>
         </div>
@@ -251,8 +281,7 @@ function App() {
             onClick={() => { setEditingDns(null); setModalOpen(true); }}
             className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2.5 rounded-xl transition-all flex items-center justify-center space-x-2 text-sm shadow-lg shadow-emerald-600/20"
           >
-            <i data-lucide="plus" className="w-4 h-4"></i>
-            <span>Adicionar DNS</span>
+            <span>➕ Adicionar DNS</span>
           </button>
         </div>
 
@@ -260,19 +289,27 @@ function App() {
           <div className="divide-y divide-slate-800/40">
             {filteredDns.length === 0 ? (
               <div className="py-12 text-center text-slate-500 text-sm">
-                Nenhum DNS cadastrado.
+                Nenhum DNS cadastrado. Clique em Adicionar DNS.
               </div>
             ) : (
               filteredDns.map(item => (
-                <div key={item.id} className="p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-slate-800/20 transition-colors">
+                <div 
+                  key={item.id} 
+                  onClick={() => carregarLogsDns(item)}
+                  className="p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-slate-800/40 transition-colors cursor-pointer"
+                  title="Clique para ver o histórico e detalhes"
+                >
                   
                   <div className="flex items-center space-x-3 overflow-hidden">
-                    <div className="p-2 rounded-xl bg-slate-800 shrink-0">
-                      <i data-lucide="check-circle-2" className="w-5 h-5 text-emerald-400"></i>
+                    <div className="p-2 rounded-xl bg-slate-800 shrink-0 text-lg">
+                      ✅
                     </div>
                     <div className="overflow-hidden">
-                      <h3 className="font-semibold text-sm text-white truncate">{item.name}</h3>
-                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:underline truncate block">
+                      <h3 className="font-semibold text-sm text-white truncate flex items-center gap-2">
+                        {item.name} 
+                        <span className="text-[10px] text-slate-400 font-normal bg-slate-800 px-2 py-0.5 rounded-md">Ver Gráfico 📊</span>
+                      </h3>
+                      <a href={item.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs text-cyan-400 hover:underline truncate block">
                         {item.url}
                       </a>
                     </div>
@@ -288,25 +325,25 @@ function App() {
 
                     <div className="flex items-center space-x-1">
                       <button 
-                        onClick={() => copiarUrl(item.url)} 
+                        onClick={(e) => copiarUrl(item.url, e)} 
                         title="Copiar URL" 
-                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors text-sm"
                       >
-                        <i data-lucide="copy" className="w-4 h-4"></i>
+                        📋
                       </button>
                       <button 
-                        onClick={() => { setEditingDns(item); setModalOpen(true); }} 
+                        onClick={(e) => { e.stopPropagation(); setEditingDns(item); setModalOpen(true); }} 
                         title="Editar" 
-                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors"
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors text-sm"
                       >
-                        <i data-lucide="edit-3" className="w-4 h-4"></i>
+                        ✏️
                       </button>
                       <button 
-                        onClick={() => setDeleteModalId(item.id)} 
+                        onClick={(e) => { e.stopPropagation(); setDeleteModalId(item.id); }} 
                         title="Excluir" 
-                        className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors"
+                        className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors text-sm"
                       >
-                        <i data-lucide="trash-2" className="w-4 h-4"></i>
+                        🗑️
                       </button>
                     </div>
                   </div>
@@ -319,6 +356,86 @@ function App() {
 
       </div>
 
+      {/* Modal de Detalhes e Gráfico UptimeRobot */}
+      {detailDns && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#0d1322] border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-6 shadow-2xl">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-xs uppercase tracking-wider text-emerald-400 font-semibold">Detalhes do Monitor</span>
+                <h3 className="text-xl font-bold text-white mt-0.5">{detailDns.name}</h3>
+                <a href={detailDns.url} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:underline">
+                  {detailDns.url}
+                </a>
+              </div>
+              <button 
+                onClick={() => setDetailDns(null)} 
+                className="text-slate-400 hover:text-white bg-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold"
+              >
+                ✕ Fechar
+              </button>
+            </div>
+
+            <div className="bg-[#111827] border border-slate-800 p-4 rounded-xl space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Disponibilidade Geral:</span>
+                <span className="text-emerald-400 font-bold text-sm">100.00%</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Estado Atual:</span>
+                <span className="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-bold border border-emerald-500/20">ONLINE</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Latência Média:</span>
+                <span className="text-white font-medium">{detailDns.latency}</span>
+              </div>
+            </div>
+
+            {/* Gráfico Estilo UptimeRobot (Barras de Histórico) */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-300 font-medium">Histórico de Registos (Estilo UptimeRobot)</span>
+                <span className="text-slate-500 text-[10px]">Mais recentes →</span>
+              </div>
+
+              <div className="bg-[#111827] border border-slate-800 p-4 rounded-xl">
+                {loadingLogs ? (
+                  <div className="text-center text-xs text-slate-500 py-4">Carregando histórico...</div>
+                ) : dnsLogs.length === 0 ? (
+                  <div className="text-center text-xs text-slate-500 py-4">Ainda sem histórico registado.</div>
+                ) : (
+                  <div className="flex items-center gap-1 overflow-x-auto py-2">
+                    {dnsLogs.map((log, idx) => (
+                      <div 
+                        key={log.id || idx}
+                        title={`Status: ${log.status} | Latência: ${log.latency || '-'} | Data: ${new Date(log.created_at).toLocaleString()}`}
+                        className={`h-8 flex-1 min-w-[8px] rounded-sm transition-all hover:scale-110 cursor-pointer ${
+                          log.status === 'online' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-rose-500 hover:bg-rose-400'
+                        }`}
+                      ></div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between text-[10px] text-slate-500 mt-3 pt-2 border-t border-slate-800/60">
+                  <span>Passado</span>
+                  <span>Agora</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button 
+                onClick={() => setDetailDns(null)} 
+                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-medium py-2.5 rounded-xl text-xs transition-all"
+              >
+                Voltar ao Painel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Adicionar / Editar */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#0d1322] border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
@@ -365,30 +482,7 @@ function App() {
         </div>
       )}
 
+      {/* Modal Excluir */}
       {deleteModalId && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#0d1322] border border-slate-800 rounded-2xl w-full max-w-xs p-5 space-y-4 text-center shadow-2xl">
-            <h3 className="text-base font-bold text-white">Deseja excluir este DNS?</h3>
-            <div className="flex justify-center space-x-2 pt-1">
-              <button 
-                onClick={() => setDeleteModalId(null)} 
-                className="px-3 py-1.5 rounded-xl text-xs text-slate-400 hover:text-white"
-              >
-                Cancelar
-              </button>
-              <button 
-                onClick={() => handleDeleteDns(deleteModalId)} 
-                className="bg-rose-600 hover:bg-rose-500 text-white font-medium px-3.5 py-1.5 rounded-xl text-xs shadow-lg shadow-rose-600/20"
-              >
-                Excluir
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+          <div className="bg-[#0d1322] border border-slate-800 rounded-2xl w-full max-w-xs p-5 space-y-4 text
