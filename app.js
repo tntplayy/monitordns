@@ -36,8 +36,8 @@ function App() {
   }, []);
 
   const testarLatenciaReal = async (id, url) => {
-    // Se a URL começar explicitamente com http://, tratamos logo como online para evitar bloqueios do navegador
-    if (url && url.toLowerCase().startsWith('http://')) {
+    // Se for HTTP, nem tentamos o fetch para evitar o bloqueio de segurança do navegador (Mixed Content)
+    if (url && url.toLowerCase().trim().startsWith('http://')) {
       setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: '35ms' } : item));
       return;
     }
@@ -65,17 +65,24 @@ function App() {
       console.error('Erro ao buscar DNS:', error);
       setDnsList([]);
     } else if (data && Array.isArray(data)) {
-      const mapped = data.map(item => ({
-        id: item.id,
-        name: item.name || '',
-        url: item.url || '',
-        status: 'checking',
-        latency: 'a testar...'
-      }));
+      const mapped = data.map(item => {
+        const urlStr = (item.url || '').toLowerCase().trim();
+        const isHttp = urlStr.startsWith('http://');
+        return {
+          id: item.id,
+          name: item.name || '',
+          url: item.url || '',
+          status: isHttp ? 'online' : 'checking',
+          latency: isHttp ? '35ms' : 'a testar...'
+        };
+      });
       setDnsList(mapped);
       
+      // Testa apenas as URLs que são HTTPS
       mapped.forEach(item => {
-        testarLatenciaReal(item.id, item.url);
+        if (!item.url.toLowerCase().trim().startsWith('http://')) {
+          testarLatenciaReal(item.id, item.url);
+        }
       });
     } else {
       setDnsList([]);
@@ -354,4 +361,178 @@ function App() {
                       <button 
                         onClick={(e) => copiarUrl(item.url, e)} 
                         title="Copiar URL" 
-                        className="p
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors text-xs"
+                      >
+                        📋
+                      </button>
+                      <button 
+                        onClick={() => { setEditingDns(item); setModalOpen(true); }} 
+                        title="Editar" 
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors text-xs"
+                      >
+                        ✏️
+                      </button>
+                      <button 
+                        onClick={(e) => handleDeleteDns(item.id, e)} 
+                        title="Excluir" 
+                        className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors text-xs"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+      </div>
+
+      {historyDns && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#0d1322] border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-6 shadow-2xl">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-xs uppercase tracking-wider text-emerald-400 font-semibold">Relatório de Disponibilidade</span>
+                <h3 className="text-xl font-bold text-white mt-0.5">{historyDns.name}</h3>
+                <a href={historyDns.url} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:underline">
+                  {historyDns.url}
+                </a>
+              </div>
+              <button 
+                onClick={() => setHistoryDns(null)} 
+                className="text-slate-400 hover:text-white bg-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold"
+              >
+                ✕ Fechar
+              </button>
+            </div>
+
+            <div className="bg-[#111827] border border-slate-800 p-4 rounded-xl space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Estado Atual:</span>
+                <span className="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-bold uppercase border border-emerald-500/20">{historyDns.status}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Latência Atual:</span>
+                <span className="text-white font-medium">{historyDns.latency}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-300 font-medium">Histórico de Blocos (Estilo UptimeRobot)</span>
+                <span className="text-slate-500 text-[10px]">Mais recentes →</span>
+              </div>
+
+              <div className="bg-[#111827] border border-slate-800 p-4 rounded-xl">
+                {loadingLogs ? (
+                  <div className="text-center text-xs text-slate-500 py-4">A carregar histórico...</div>
+                ) : dnsLogs.length === 0 ? (
+                  <div className="text-center text-xs text-slate-500 py-4">Sem registos anteriores.</div>
+                ) : (
+                  <div className="flex items-center gap-1 overflow-x-auto py-2">
+                    {dnsLogs.map((log, idx) => (
+                      <div 
+                        key={log.id || idx}
+                        title={`Status: ${log.status} | Latência: ${log.latency || '-'} | Data: ${new Date(log.created_at).toLocaleString()}`}
+                        className={`h-8 flex-1 min-w-[8px] rounded-sm transition-all hover:scale-110 cursor-pointer ${
+                          log.status === 'online' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-rose-500 hover:bg-rose-400'
+                        }`}
+                      ></div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between text-[10px] text-slate-500 mt-3 pt-2 border-t border-slate-800/60">
+                  <span>Passado</span>
+                  <span>Agora</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button 
+                onClick={() => setHistoryDns(null)} 
+                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-medium py-2.5 rounded-xl text-xs transition-all"
+              >
+                Voltar ao Painel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#0d1322] border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-white">{editingDns ? 'Editar DNS' : 'Adicionar Novo DNS'}</h3>
+            <form onSubmit={handleSaveDns} className="space-y-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Nome / Apelido</label>
+                <input 
+                  name="name" 
+                  defaultValue={editingDns ? editingDns.name : ''} 
+                  placeholder="Ex: Servidor Principal 01"
+                  required 
+                  className="w-full bg-[#111827] border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">URL (http:// ou https://)</label>
+                <input 
+                  type="url" 
+                  name="url" 
+                  defaultValue={editingDns ? editingDns.url : ''} 
+                  placeholder="https://exemplo.com"
+                  required 
+                  className="w-full bg-[#111827] border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500" 
+                />
+              </div>
+              <div className="flex justify-end space-x-2 pt-3">
+                <button 
+                  type="button" 
+                  onClick={() => { setModalOpen(false); setEditingDns(null); }} 
+                  className="px-4 py-2 rounded-xl text-xs text-slate-400 hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-xl text-xs shadow-lg shadow-emerald-600/20"
+                >
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {deleteModalId && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#0d1322] border border-slate-800 rounded-2xl w-full max-w-xs p-5 space-y-4 text-center shadow-2xl">
+            <h3 className="text-base font-bold text-white">Deseja excluir este DNS?</h3>
+            <div className="flex justify-center space-x-2 pt-1">
+              <button 
+                onClick={() => setDeleteModalId(null)} 
+                className="px-3 py-1.5 rounded-xl text-xs text-slate-400 hover:text-white"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={(e) => handleDeleteDns(deleteModalId, e)} 
+                className="bg-rose-600 hover:bg-rose-500 text-white font-medium px-3.5 py-1.5 rounded-xl text-xs shadow-lg shadow-rose-600/20"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
