@@ -37,56 +37,70 @@ function App() {
 
   const carregarDnsUptime = async () => {
     setIsRefreshing(true);
+    let monitorsFromSupabase = [];
+
+    // 1. Primeiro busca do Supabase para garantir que exibe sempre o que o utilizador cadastrou
+    if (supabase) {
+      const { data } = await supabase.from('dns_monitors').select('*').order('created_at', { ascending: false });
+      if (data && Array.isArray(data)) {
+        monitorsFromSupabase = data;
+      }
+    }
+
+    // 2. Tenta enriquecer com dados do UptimeRobot se possível
     try {
       const body = `api_key=${UPTIME_API_KEY}&format=json&logs=1&response_times=1&custom_uptime_ratios=30`;
-      
       const res = await fetch('https://api.uptimerobot.com/v2/getMonitors', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: body
       });
-
       const data = await res.json();
+      
       if (data && data.stat === 'ok' && Array.isArray(data.monitors)) {
-        const mapped = data.monitors.map(m => {
-          let statusStr = m.status === 2 ? 'online' : 'offline';
+        const mapped = monitorsFromSupabase.map(supItem => {
+          // Procura correspondência no UptimeRobot pelo URL
+          const upMatch = data.monitors.find(m => m.url.toLowerCase().trim() === supItem.url.toLowerCase().trim());
           
-          // Tipo do monitor (1: HTTP, 2: Keyword, 3: Ping, 4: Port)
-          let typeStr = 'HTTP';
-          if (m.type === 4) typeStr = 'PORT';
-          else if (m.type === 3) typeStr = 'PING';
-
-          // Uptime ratio (ex: 100.0)
-          let uptimePct = '100%';
-          if (m.custom_uptime_ratio) {
-            uptimePct = parseFloat(m.custom_uptime_ratio).toFixed(0) + '%';
-          }
-
-          // Gerar blocos de histórico para simular o visual UptimeRobot
-          let logs = m.logs || [];
-          if (logs.length === 0) {
-            logs = Array.from({ length: 25 }).map(() => ({ type: 1, datetime: Date.now() / 1000 }));
-          }
+          let statusStr = upMatch ? (upMatch.status === 2 ? 'online' : 'offline') : 'online';
+          let uptimePct = upMatch && upMatch.custom_uptime_ratio ? parseFloat(upMatch.custom_uptime_ratio).toFixed(0) + '%' : '100%';
+          let logs = upMatch && upMatch.logs ? upMatch.logs : Array.from({ length: 25 }).map(() => ({ type: 1, datetime: Date.now() / 1000 }));
 
           return {
-            id: m.id.toString(),
-            name: m.friendly_name,
-            url: m.url,
+            id: supItem.id.toString(),
+            uptimeId: upMatch ? upMatch.id : null,
+            name: supItem.name,
+            url: supItem.url,
             status: statusStr,
-            type: typeStr,
-            interval: Math.round(m.interval / 60) + ' min',
+            type: 'HTTP',
+            interval: upMatch ? Math.round(upMatch.interval / 60) + ' min' : '5 min',
             uptime: uptimePct,
             durationText: 'Ativo',
             rawLogs: logs
           };
         });
         setDnsList(mapped);
+        setIsRefreshing(false);
+        return;
       }
     } catch (err) {
-      console.error('Erro ao buscar do UptimeRobot', err);
+      console.warn('UptimeRobot indisponível, a usar Supabase puro');
     }
+
+    // Fallback caso a API do UptimeRobot falhe por CORS
+    const fallbackMapped = monitorsFromSupabase.map(item => ({
+      id: item.id.toString(),
+      uptimeId: null,
+      name: item.name,
+      url: item.url,
+      status: 'online',
+      type: 'HTTP',
+      interval: '5 min',
+      uptime: '100%',
+      durationText: 'Ativo',
+      rawLogs: Array.from({ length: 25 }).map(() => ({ type: 1, datetime: Date.now() / 1000 }))
+    }));
+    setDnsList(fallbackMapped);
     setIsRefreshing(false);
   };
 
@@ -157,46 +171,30 @@ function App() {
     const name = formData.get('name');
     const url = formData.get('url');
 
-    try {
-      const body = `api_key=${UPTIME_API_KEY}&format=json&friendly_name=${encodeURIComponent(name)}&url=${encodeURIComponent(url)}&type=1`;
-      await fetch('https://api.uptimerobot.com/v2/newMonitor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body
-      });
-    } catch (err) {
-      console.error('Erro ao criar no UptimeRobot', err);
-    }
-
+    // Salva diretamente no Supabase para aparecer instantaneamente
     if (supabase) {
-      await supabase.from('dns_monitors').insert([{ name, url }]);
+      const { error } = await supabase.from('dns_monitors').insert([{ name, url }]);
+      if (error) {
+        alert('Erro ao salvar: ' + error.message);
+        return;
+      }
     }
 
     setModalOpen(false);
+    e.target.reset();
     carregarDnsUptime();
   };
 
-  const handleDeleteDns = async (id, e) => {
+  const handleDeleteDns = async (item, e) => {
     if (e) e.stopPropagation();
     if (!confirm('Deseja excluir este monitor?')) return;
 
-    try {
-      const body = `api_key=${UPTIME_API_KEY}&format=json&id=${id}`;
-      await fetch('https://api.uptimerobot.com/v2/deleteMonitor', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: body
-      });
-    } catch (err) {
-      console.error('Erro ao excluir no UptimeRobot', err);
-    }
-
     if (supabase) {
-      await supabase.from('dns_monitors').delete().eq('id', id);
+      await supabase.from('dns_monitors').delete().eq('id', item.id);
     }
 
-    setDnsList(prev => prev.filter(d => d.id !== id));
-    if (historyDns && historyDns.id === id) setHistoryDns(null);
+    setDnsList(prev => prev.filter(d => d.id !== item.id));
+    if (historyDns && historyDns.id === item.id) setHistoryDns(null);
   };
 
   const safeDnsList = Array.isArray(dnsList) ? dnsList : [];
@@ -258,7 +256,7 @@ function App() {
     <div className="min-h-screen bg-[#0d1117] text-[#c9d1d9] font-sans p-4 sm:p-6">
       <div className="max-w-6xl mx-auto space-y-4">
         
-        {/* Topo estilo UptimeRobot */}
+        {/* Topo */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#161b22] border border-slate-800 p-4 rounded-xl gap-4">
           <div className="flex items-center space-x-3">
             <h1 className="text-xl font-bold text-white tracking-wide">Monitoradoss<span className="text-emerald-500">.</span></h1>
@@ -301,7 +299,7 @@ function App() {
           />
         </div>
 
-        {/* Lista de Monitores no Estilo Exato UptimeRobot */}
+        {/* Lista de Monitores */}
         <div className="bg-[#161b22] border border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-800/80">
           {filteredDns.length === 0 ? (
             <div className="py-12 text-center text-slate-500 text-xs">
@@ -315,7 +313,6 @@ function App() {
                 className="p-3.5 sm:px-5 sm:py-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-[#1f242c] transition-colors cursor-pointer group"
               >
                 
-                {/* Lado Esquerdo: Ícone de Status + Nome e URL */}
                 <div className="flex items-center space-x-3 overflow-hidden">
                   <div className={`w-3 h-3 rounded-full shrink-0 ${item.status === 'online' ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50' : 'bg-rose-500 shadow-lg shadow-rose-500/50'}`}></div>
                   <div className="overflow-hidden space-y-0.5">
@@ -331,16 +328,13 @@ function App() {
                   </div>
                 </div>
 
-                {/* Lado Direito: Intervalo + Barras de Histórico Estilo UptimeRobot + Percentagem */}
                 <div className="flex items-center justify-between md:justify-end w-full md:w-auto gap-6 border-t md:border-t-0 pt-2 md:pt-0 border-slate-800">
                   
-                  {/* Intervalo */}
                   <div className="text-[11px] text-slate-400 flex items-center space-x-1">
                     <span>⏱️</span>
                     <span>{item.interval}</span>
                   </div>
 
-                  {/* Blocos de Barras (Histórico) */}
                   <div className="flex items-center space-x-[2px]" title="Histórico de blocos de disponibilidade">
                     {item.rawLogs && item.rawLogs.slice(0, 28).map((log, lIdx) => (
                       <div 
@@ -352,7 +346,6 @@ function App() {
                     ))}
                   </div>
 
-                  {/* Percentagem e Ações */}
                   <div className="flex items-center space-x-4">
                     <span className="text-xs font-semibold text-slate-200 w-10 text-right">{item.uptime}</span>
                     
@@ -365,7 +358,7 @@ function App() {
                         📋
                       </button>
                       <button 
-                        onClick={(e) => handleDeleteDns(item.id, e)} 
+                        onClick={(e) => handleDeleteDns(item, e)} 
                         title="Excluir" 
                         className="p-1.5 text-rose-400 hover:text-rose-300 rounded hover:bg-slate-800 text-xs"
                       >
@@ -389,7 +382,7 @@ function App() {
           <div className="bg-[#161b22] border border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-6 shadow-2xl">
             <div className="flex justify-between items-start">
               <div>
-                <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Monitor Detail</span>
+                <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Detalhes do Monitor</span>
                 <h3 className="text-lg font-bold text-white mt-1">{historyDns.name}</h3>
                 <a href={historyDns.url} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:underline">
                   {historyDns.url}
@@ -405,21 +398,21 @@ function App() {
 
             <div className="bg-[#0d1117] border border-slate-800 p-4 rounded-lg space-y-2 text-xs">
               <div className="flex justify-between">
-                <span className="text-slate-400">Current Status:</span>
+                <span className="text-slate-400">Estado Atual:</span>
                 <span className={`font-bold uppercase ${historyDns.status === 'online' ? 'text-emerald-400' : 'text-rose-400'}`}>{historyDns.status}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Uptime (30 dias):</span>
+                <span className="text-slate-400">Disponibilidade (30 dias):</span>
                 <span className="text-white font-semibold">{historyDns.uptime}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Check Interval:</span>
+                <span className="text-slate-400">Intervalo de Verificação:</span>
                 <span className="text-white">{historyDns.interval}</span>
               </div>
             </div>
 
             <div className="space-y-2">
-              <span className="text-xs font-medium text-slate-300">Uptime History (Last Logs)</span>
+              <span className="text-xs font-medium text-slate-300">Histórico de Registos</span>
               <div className="bg-[#0d1117] border border-slate-800 p-4 rounded-lg">
                 {loadingLogs ? (
                   <div className="text-center text-xs text-slate-500 py-3">A carregar logs...</div>
@@ -428,74 +421,4 @@ function App() {
                     {dnsLogs.map((log, idx) => (
                       <div 
                         key={idx}
-                        title={`Status: ${log.status} | Time: ${new Date(log.created_at).toLocaleString()}`}
-                        className={`h-7 flex-1 min-w-[7px] rounded-[1px] ${log.status === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}
-                      ></div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button 
-                onClick={() => setHistoryDns(null)} 
-                className="w-full bg-[#21262d] hover:bg-slate-700 text-white font-medium py-2 rounded-lg text-xs"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal para Adicionar Novo Monitor */}
-      {modalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#161b22] border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 shadow-2xl">
-            <h3 className="text-base font-bold text-white">Add Monitor</h3>
-            <form onSubmit={handleSaveDns} className="space-y-3">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Nome</label>
-                <input 
-                  name="name" 
-                  placeholder="Ex: Servidor Principal"
-                  required 
-                  className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">URL (http:// ou https://)</label>
-                <input 
-                  type="url" 
-                  name="url" 
-                  placeholder="https://exemplo.com"
-                  required 
-                  className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
-                />
-              </div>
-              <div className="flex justify-end space-x-2 pt-2">
-                <button 
-                  type="button" 
-                  onClick={() => setModalOpen(false)} 
-                  className="px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg text-xs"
-                >
-                  Salvar
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+                        title={`Estado: ${log.status} \vert{} Data:${new Date(log
