@@ -65,11 +65,14 @@ function App() {
     }
   }, [session]);
 
+  // Executa os ícones do Lucide com segurança apenas quando a sessão ou lista mudar
   useEffect(() => {
     if (window.lucide) {
-      window.lucide.createIcons();
+      setTimeout(() => {
+        window.lucide.createIcons();
+      }, 50);
     }
-  });
+  }, [session, dnsList, modalOpen, deleteModalId]);
 
   const testarStatusUrl = async (id, url) => {
     const startTime = performance.now();
