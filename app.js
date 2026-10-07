@@ -12,7 +12,6 @@ function App() {
   const [loadingLogin, setLoadingLogin] = useState(false);
 
   const [dnsList, setDnsList] = useState([]);
-  const [loadingDns, setLoadingDns] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -38,7 +37,6 @@ function App() {
 
   const carregarDns = async () => {
     if (!supabase) return;
-    setLoadingDns(true);
     const { data, error } = await supabase
       .from('dns_monitors')
       .select('*')
@@ -56,20 +54,9 @@ function App() {
         latency: '120ms'
       }));
       setDnsList(mapped);
-      mapped.forEach(item => registarLog(item.id, 'online', '120ms'));
     } else {
       setDnsList([]);
     }
-    setLoadingDns(false);
-  };
-
-  const registarLog = async (monitorId, status, latency) => {
-    if (!supabase) return;
-    await supabase.from('dns_logs').insert([{
-      monitor_id: monitorId,
-      status: status,
-      latency: latency
-    }]);
   };
 
   useEffect(() => {
@@ -81,6 +68,14 @@ function App() {
   const carregarLogsDns = async (dns) => {
     setDetailDns(dns);
     setLoadingLogs(true);
+    
+    // Insere um log de verificação de forma segura apenas ao abrir os detalhes
+    await supabase.from('dns_logs').insert([{
+      monitor_id: dns.id,
+      status: 'online',
+      latency: dns.latency
+    }]).catch(() => {});
+
     const { data, error } = await supabase
       .from('dns_logs')
       .select('*')
@@ -89,7 +84,6 @@ function App() {
       .limit(30);
 
     if (error) {
-      console.error('Erro ao buscar logs:', error);
       setDnsLogs([]);
     } else {
       setDnsLogs(data || []);
