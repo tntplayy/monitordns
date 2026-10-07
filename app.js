@@ -18,7 +18,9 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingDns, setEditingDns] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [globalInterval, setGlobalInterval] = useState(localStorage.getItem('global_check_interval') || '5');
+
   const [historyDns, setHistoryDns] = useState(null);
   const [dnsLogs, setDnsLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -69,12 +71,13 @@ function App() {
             duration: 0
           }));
 
+          const intervalDisplay = supItem.interval ? `${supItem.interval} min` : `${globalInterval} min`;
+
           return {
             id: supItem.id.toString(),
             name: supItem.name || 'Servidor',
             url: supItem.url || '',
-            interval: supItem.interval ? `${supItem.interval} min` : (upMatch ? Math.round(upMatch.interval / 60) + ' min' : '5 min'),
-            intervalValue: supItem.interval || 5,
+            interval: intervalDisplay,
             status: statusStr,
             type: 'HTTP',
             uptime: uptimePct,
@@ -94,8 +97,7 @@ function App() {
       id: item.id.toString(),
       name: item.name || 'Servidor',
       url: item.url || '',
-      interval: item.interval ? `${item.interval} min` : '5 min',
-      intervalValue: item.interval || 5,
+      interval: item.interval ? `${item.interval} min` : `${globalInterval} min`,
       status: 'online',
       type: 'HTTP',
       uptime: '100%',
@@ -176,33 +178,27 @@ function App() {
     const formData = new FormData(e.target);
     const name = formData.get('name');
     const url = formData.get('url');
-    const interval = parseInt(formData.get('interval'));
 
     if (supabase) {
-      if (editingDns) {
-        const { error } = await supabase.from('dns_monitors').update({ name, url, interval }).eq('id', editingDns.id);
-        if (error) {
-          alert('Erro ao atualizar: ' + error.message);
-          return;
-        }
-      } else {
-        const { error } = await supabase.from('dns_monitors').insert([{ name, url, interval }]);
-        if (error) {
-          alert('Erro ao salvar: ' + error.message);
-          return;
-        }
+      const { error } = await supabase.from('dns_monitors').insert([{ name, url, interval: parseInt(globalInterval) }]);
+      if (error) {
+        alert('Erro ao salvar: ' + error.message);
+        return;
       }
     }
 
     setModalOpen(false);
-    setEditingDns(null);
     carregarDnsUptime();
   };
 
-  const abrirModalEdicao = (item, e) => {
-    e.stopPropagation();
-    setEditingDns(item);
-    setModalOpen(true);
+  const handleSaveSettings = (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const newInterval = formData.get('globalInterval');
+    setGlobalInterval(newInterval);
+    localStorage.setItem('global_check_interval', newInterval);
+    setSettingsOpen(false);
+    carregarDnsUptime();
   };
 
   const handleDeleteDns = async (item, e) => {
@@ -293,11 +289,21 @@ function App() {
               <span>{isRefreshing ? '⏳ A atualizar...' : 'Atualizar'}</span>
             </button>
             <button
-              onClick={() => { setEditingDns(null); setModalOpen(true); }}
+              onClick={() => setModalOpen(true)}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-3.5 py-2 rounded-lg text-xs transition-all shadow"
             >
               Adicionar
             </button>
+            
+            {/* Botão de Configurações com ícone de engrenagem */}
+            <button 
+              onClick={() => setSettingsOpen(true)} 
+              title="Configurações"
+              className="px-3 py-2 bg-[#21262d] hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center justify-center"
+            >
+              ⚙️
+            </button>
+
             <button 
               onClick={handleLogout} 
               className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-xs font-medium"
@@ -312,226 +318,3 @@ function App() {
             type="text"
             placeholder="Pesquisar por Nome OU URL..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full sm:w-80 bg-[#161b22] border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-600 placeholder-slate-500"
-          />
-        </div>
-
-        <div className="bg-[#161b22] border border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-800/80">
-          {filteredDns.length === 0 ? (
-            <div className="py-12 text-center text-slate-500 text-xs">
-              Nenhum monitor encontrado.
-            </div>
-          ) : (
-            filteredDns.map(item => (
-              <div 
-                key={item.id} 
-                onClick={(e) => abrirHistorico(item, e)}
-                className="p-3.5 sm:px-5 sm:py-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-[#1f242c] transition-colors cursor-pointer group"
-              >
-                
-                <div className="flex items-center space-x-3 overflow-hidden">
-                  <div className={`w-3 h-3 rounded-full shrink-0 ${item.status === 'online' ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50' : 'bg-rose-500 shadow-lg shadow-rose-500/50'}`}></div>
-                  <div className="overflow-hidden space-y-0.5">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-medium text-xs text-white truncate">{item.name}</span>
-                      <span className="text-[10px] bg-[#21262d] text-slate-400 px-1.5 py-0.5 rounded border border-slate-700 uppercase font-mono">{item.type}</span>
-                    </div>
-                    <div className="flex items-center space-x-2 text-[11px] text-slate-400">
-                      <span className="truncate max-w-[220px] sm:max-w-sm">{item.url}</span>
-                      <span>•</span>
-                      <span className="text-slate-500">{item.durationText}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between md:justify-end w-full md:w-auto gap-6 border-t md:border-t-0 pt-2 md:pt-0 border-slate-800">
-                  
-                  <div className="text-[11px] text-slate-400 flex items-center space-x-1">
-                    <span>⏱️</span>
-                    <span>{item.interval}</span>
-                  </div>
-
-                  <div className="flex items-center space-x-[2px]">
-                    {item.rawLogs && item.rawLogs.slice(0, 28).map((log, lIdx) => {
-                      const logDate = new Date((log.datetime || Date.now() / 1000) * 1000).toLocaleString();
-                      const statusText = log.type === 1 ? 'Online (100%)' : 'Offline';
-                      return (
-                        <div 
-                          key={lIdx}
-                          title={`${logDate} - ${statusText}`}
-                          className={`w-1.5 h-6 rounded-[1px] transition-all hover:opacity-80 ${
-                            log.type === 1 ? 'bg-emerald-500' : 'bg-rose-500'
-                          }`}
-                        ></div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="flex items-center space-x-4">
-                    <span className="text-xs font-semibold text-slate-200 w-10 text-right">{item.uptime}</span>
-                    
-                    <div className="flex items-center space-x-1" onClick={(e) => e.stopPropagation()}>
-                      <button 
-                        onClick={(e) => copiarUrl(item.url, e)} 
-                        title="Copiar URL" 
-                        className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 text-xs"
-                      >
-                        📋
-                      </button>
-                      <button 
-                        onClick={(e) => abrirModalEdicao(item, e)} 
-                        title="Editar Monitor" 
-                        className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 text-xs"
-                      >
-                        ✏️
-                      </button>
-                      <button 
-                        onClick={(e) => handleDeleteDns(item, e)} 
-                        title="Excluir" 
-                        className="p-1.5 text-rose-400 hover:text-rose-300 rounded hover:bg-slate-800 text-xs"
-                      >
-                        🗑️
-                      </button>
-                    </div>
-                  </div>
-
-                </div>
-
-              </div>
-            ))
-          )}
-        </div>
-
-      </div>
-
-      {historyDns && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#161b22] border border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-6 shadow-2xl">
-            <div className="flex justify-between items-start">
-              <div>
-                <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Detalhes do Monitor</span>
-                <h3 className="text-lg font-bold text-white mt-1">{historyDns.name}</h3>
-                <a href={historyDns.url} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:underline">
-                  {historyDns.url}
-                </a>
-              </div>
-              <button 
-                onClick={() => setHistoryDns(null)} 
-                className="text-slate-400 hover:text-white bg-[#21262d] px-3 py-1 rounded text-xs"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="bg-[#0d1117] border border-slate-800 p-4 rounded-lg space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Estado Atual:</span>
-                <span className={`font-bold uppercase ${historyDns.status === 'online' ? 'text-emerald-400' : 'text-rose-400'}`}>{historyDns.status}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Disponibilidade (30 dias):</span>
-                <span className="text-white font-semibold">{historyDns.uptime}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Intervalo de Verificação:</span>
-                <span className="text-white">{historyDns.interval}</span>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <span className="text-xs font-medium text-slate-300">Histórico de Registos</span>
-              <div className="bg-[#0d1117] border border-slate-800 p-4 rounded-lg">
-                {loadingLogs ? (
-                  <div className="text-center text-xs text-slate-500 py-3">A carregar logs...</div>
-                ) : (
-                  <div className="flex items-center gap-1 overflow-x-auto py-2">
-                    {dnsLogs.map((log, idx) => (
-                      <div 
-                        key={idx}
-                        title={`Estado: ${log.status} | Data: ${log.created_at}`}
-                        className={`h-7 flex-1 min-w-[7px] rounded-[1px] ${log.status === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}
-                      ></div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <button 
-                onClick={() => setHistoryDns(null)} 
-                className="w-full bg-[#21262d] hover:bg-slate-700 text-white font-medium py-2 rounded-lg text-xs"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {modalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#161b22] border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 shadow-2xl">
-            <h3 className="text-base font-bold text-white">{editingDns ? 'Editar Monitor' : 'Adicionar Monitor'}</h3>
-            <form onSubmit={handleSaveDns} className="space-y-3">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Nome</label>
-                <input 
-                  name="name" 
-                  defaultValue={editingDns ? editingDns.name : ''} 
-                  placeholder="Ex: Servidor Principal"
-                  required 
-                  className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">URL (http:// ou https://)</label>
-                <input 
-                  type="url" 
-                  name="url" 
-                  defaultValue={editingDns ? editingDns.url : ''} 
-                  placeholder="https://exemplo.com"
-                  required 
-                  className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Intervalo de Verificação</label>
-                <select 
-                  name="interval" 
-                  defaultValue={editingDns ? editingDns.intervalValue : "5"}
-                  className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="1">1 minuto</option>
-                  <option value="5">5 minutos</option>
-                  <option value="15">15 minutos</option>
-                  <option value="30">30 minutos</option>
-                  <option value="60">1 hora</option>
-                </select>
-              </div>
-              <div className="flex justify-end space-x-2 pt-2">
-                <button 
-                  type="button" 
-                  onClick={() => { setModalOpen(false); setEditingDns(null); }} 
-                  className="px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white"
-                >
-                  Cancelar
-                </button>
-                <button 
-                  type="submit" 
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg text-xs"
-                >
-                  {editingDns ? 'Atualizar' : 'Salvar'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
