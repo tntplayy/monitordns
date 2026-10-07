@@ -18,6 +18,7 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingDns, setEditingDns] = useState(null);
   const [historyDns, setHistoryDns] = useState(null);
   const [dnsLogs, setDnsLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -62,7 +63,6 @@ function App() {
           let statusStr = upMatch ? (upMatch.status === 2 ? 'online' : 'offline') : 'online';
           let uptimePct = upMatch && upMatch.custom_uptime_ratio ? parseFloat(upMatch.custom_uptime_ratio).toFixed(0) + '%' : '100%';
           
-          // Gera logs detalhados com datas reais ou simulação horária para os blocos
           let logs = upMatch && upMatch.logs && upMatch.logs.length > 0 ? upMatch.logs : Array.from({ length: 25 }).map((_, i) => ({
             type: 1,
             datetime: Math.floor(Date.now() / 1000) - (i * 3600),
@@ -73,9 +73,10 @@ function App() {
             id: supItem.id.toString(),
             name: supItem.name || 'Servidor',
             url: supItem.url || '',
+            interval: supItem.interval ? `${supItem.interval} min` : (upMatch ? Math.round(upMatch.interval / 60) + ' min' : '5 min'),
+            intervalValue: supItem.interval || 5,
             status: statusStr,
             type: 'HTTP',
-            interval: supItem.interval ? `${supItem.interval} min` : (upMatch ? Math.round(upMatch.interval / 60) + ' min' : '5 min'),
             uptime: uptimePct,
             durationText: 'Ativo',
             rawLogs: logs
@@ -93,9 +94,10 @@ function App() {
       id: item.id.toString(),
       name: item.name || 'Servidor',
       url: item.url || '',
+      interval: item.interval ? `${item.interval} min` : '5 min',
+      intervalValue: item.interval || 5,
       status: 'online',
       type: 'HTTP',
-      interval: item.interval ? `${item.interval} min` : '5 min',
       uptime: '100%',
       durationText: 'Ativo',
       rawLogs: Array.from({ length: 25 }).map((_, i) => ({
@@ -174,18 +176,33 @@ function App() {
     const formData = new FormData(e.target);
     const name = formData.get('name');
     const url = formData.get('url');
-    const interval = formData.get('interval');
+    const interval = parseInt(formData.get('interval'));
 
     if (supabase) {
-      const { error } = await supabase.from('dns_monitors').insert([{ name, url, interval: parseInt(interval) }]);
-      if (error) {
-        alert('Erro ao salvar: ' + error.message);
-        return;
+      if (editingDns) {
+        const { error } = await supabase.from('dns_monitors').update({ name, url, interval }).eq('id', editingDns.id);
+        if (error) {
+          alert('Erro ao atualizar: ' + error.message);
+          return;
+        }
+      } else {
+        const { error } = await supabase.from('dns_monitors').insert([{ name, url, interval }]);
+        if (error) {
+          alert('Erro ao salvar: ' + error.message);
+          return;
+        }
       }
     }
 
     setModalOpen(false);
+    setEditingDns(null);
     carregarDnsUptime();
+  };
+
+  const abrirModalEdicao = (item, e) => {
+    e.stopPropagation();
+    setEditingDns(item);
+    setModalOpen(true);
   };
 
   const handleDeleteDns = async (item, e) => {
@@ -276,7 +293,7 @@ function App() {
               <span>{isRefreshing ? '⏳ A atualizar...' : 'Atualizar'}</span>
             </button>
             <button
-              onClick={() => setModalOpen(true)}
+              onClick={() => { setEditingDns(null); setModalOpen(true); }}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-3.5 py-2 rounded-lg text-xs transition-all shadow"
             >
               Adicionar
@@ -335,7 +352,6 @@ function App() {
                     <span>{item.interval}</span>
                   </div>
 
-                  {/* Blocos de Histórico com Tooltip individual de Data e Hora */}
                   <div className="flex items-center space-x-[2px]">
                     {item.rawLogs && item.rawLogs.slice(0, 28).map((log, lIdx) => {
                       const logDate = new Date((log.datetime || Date.now() / 1000) * 1000).toLocaleString();
@@ -362,6 +378,13 @@ function App() {
                         className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 text-xs"
                       >
                         📋
+                      </button>
+                      <button 
+                        onClick={(e) => abrirModalEdicao(item, e)} 
+                        title="Editar Monitor" 
+                        className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 text-xs"
+                      >
+                        ✏️
                       </button>
                       <button 
                         onClick={(e) => handleDeleteDns(item, e)} 
@@ -450,12 +473,13 @@ function App() {
       {modalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#161b22] border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 shadow-2xl">
-            <h3 className="text-base font-bold text-white">Adicionar Monitor</h3>
+            <h3 className="text-base font-bold text-white">{editingDns ? 'Editar Monitor' : 'Adicionar Monitor'}</h3>
             <form onSubmit={handleSaveDns} className="space-y-3">
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Nome</label>
                 <input 
                   name="name" 
+                  defaultValue={editingDns ? editingDns.name : ''} 
                   placeholder="Ex: Servidor Principal"
                   required 
                   className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
@@ -466,6 +490,7 @@ function App() {
                 <input 
                   type="url" 
                   name="url" 
+                  defaultValue={editingDns ? editingDns.url : ''} 
                   placeholder="https://exemplo.com"
                   required 
                   className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
@@ -475,7 +500,7 @@ function App() {
                 <label className="block text-xs text-slate-400 mb-1">Intervalo de Verificação</label>
                 <select 
                   name="interval" 
-                  defaultValue="5"
+                  defaultValue={editingDns ? editingDns.intervalValue : "5"}
                   className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
                 >
                   <option value="1">1 minuto</option>
@@ -488,7 +513,7 @@ function App() {
               <div className="flex justify-end space-x-2 pt-2">
                 <button 
                   type="button" 
-                  onClick={() => setModalOpen(false)} 
+                  onClick={() => { setModalOpen(false); setEditingDns(null); }} 
                   className="px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white"
                 >
                   Cancelar
@@ -497,7 +522,7 @@ function App() {
                   type="submit" 
                   className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg text-xs"
                 >
-                  Salvar
+                  {editingDns ? 'Atualizar' : 'Salvar'}
                 </button>
               </div>
             </form>
