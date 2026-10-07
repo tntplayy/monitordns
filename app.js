@@ -37,23 +37,70 @@ function App() {
 
   const testarLatenciaReal = async (id, url) => {
     if (!url) return;
-    const cleanUrl = url.toLowerCase().trim();
-
-    // Força imediata para HTTP para evitar o bloqueio de segurança do navegador
-    if (cleanUrl.startsWith('http://')) {
-      setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: '35ms' } : item));
-      return;
-    }
-
     const start = performance.now();
-    try {
-      await fetch(url, { mode: 'no-cors', cache: 'no-store' });
-      const end = performance.now();
-      const latencyMs = Math.round(end - start) + 'ms';
 
-      setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
-    } catch (err) {
-      setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
+    // Se for HTTP, testamos através de um pedido de imagem/favicon para contornar o bloqueio de CORS do fetch
+    const isHttp = url.toLowerCase().trim().startsWith('http://');
+
+    if (isHttp) {
+      let settled = false;
+      return new Promise((resolve) => {
+        const img = new Image();
+        
+        const timeout = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
+            resolve();
+          }
+        }, 5000); // 5 segundos de timeout
+
+        img.onload = () => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timeout);
+            const end = performance.now();
+            const latencyMs = Math.round(end - start) + 'ms';
+            setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
+            resolve();
+          }
+        };
+
+        img.onerror = () => {
+          // Mesmo que dê erro de CORS na imagem, se o servidor respondeu algo, podemos considerá-lo ativo ou testar via fetch mode no-cors alternativo
+          if (!settled) {
+            settled = true;
+            clearTimeout(timeout);
+            // Tentativa secundária com fetch no-cors para http
+            fetch(url, { mode: 'no-cors', cache: 'no-store' }).then(() => {
+              const end = performance.now();
+              const latencyMs = Math.round(end - start) + 'ms';
+              setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
+            }).catch(() => {
+              setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
+            });
+            resolve();
+          }
+        };
+
+        // Aponta para o favicon do domínio para testar a conectividade real
+        try {
+          const parsedUrl = new URL(url);
+          img.src = `${parsedUrl.protocol}//${parsedUrl.host}/favicon.ico?t=${Date.now()}`;
+        } catch (e) {
+          img.src = `${url}/favicon.ico?t=${Date.now()}`;
+        }
+      });
+    } else {
+      try {
+        await fetch(url, { mode: 'no-cors', cache: 'no-store' });
+        const end = performance.now();
+        const latencyMs = Math.round(end - start) + 'ms';
+
+        setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
+      } catch (err) {
+        setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
+      }
     }
   };
 
@@ -68,23 +115,17 @@ function App() {
       console.error('Erro ao buscar DNS:', error);
       setDnsList([]);
     } else if (data && Array.isArray(data)) {
-      const mapped = data.map(item => {
-        const urlStr = (item.url || '').toLowerCase().trim();
-        const isHttp = urlStr.startsWith('http://');
-        return {
-          id: item.id,
-          name: item.name || '',
-          url: item.url || '',
-          status: isHttp ? 'online' : 'checking',
-          latency: isHttp ? '35ms' : 'a testar...'
-        };
-      });
+      const mapped = data.map(item => ({
+        id: item.id,
+        name: item.name || '',
+        url: item.url || '',
+        status: 'checking',
+        latency: 'a testar...'
+      }));
       setDnsList(mapped);
       
       mapped.forEach(item => {
-        if (!item.url.toLowerCase().trim().startsWith('http://')) {
-          testarLatenciaReal(item.id, item.url);
-        }
+        testarLatenciaReal(item.id, item.url);
       });
     } else {
       setDnsList([]);
@@ -330,7 +371,7 @@ function App() {
                   
                   <div className="flex items-center space-x-3 overflow-hidden">
                     <div className="p-2 rounded-xl bg-slate-800 shrink-0 text-lg">
-                      {item.status === 'online' ? '🟢' : '🔴'}
+                      {item.status === 'online' ? '🟢' : item.status === 'offline' ? '🔴' : '🟡'}
                     </div>
                     <div className="overflow-hidden">
                       <h3 className="font-semibold text-sm text-white truncate">{item.name}</h3>
@@ -344,7 +385,8 @@ function App() {
                     <div className="text-left md:text-right">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                         item.status === 'online' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                        'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        item.status === 'offline' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                        'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                       }`}>
                         {item.status}
                       </span>
