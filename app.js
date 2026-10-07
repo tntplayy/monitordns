@@ -211,7 +211,7 @@ function App() {
       <div className="flex min-h-screen items-center justify-center bg-[#0d1117] p-4 font-sans">
         <div className="w-full max-w-md bg-[#161b22] border border-slate-800 rounded-xl p-6 sm:p-8 shadow-2xl space-y-6">
           <div className="text-center space-y-2">
-            <h1 className="text-2xl font-bold text-white tracking-wider">Monitors<span className="text-emerald-500">.</span></h1>
+            <h1 className="text-2xl font-bold text-white tracking-wider">Monitorados<span className="text-emerald-500">.</span></h1>
             <p className="text-xs text-slate-400">Faça login para gerir o painel</p>
           </div>
 
@@ -261,7 +261,7 @@ function App() {
         {/* Topo estilo UptimeRobot */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#161b22] border border-slate-800 p-4 rounded-xl gap-4">
           <div className="flex items-center space-x-3">
-            <h1 className="text-xl font-bold text-white tracking-wide">Monitors<span className="text-emerald-500">.</span></h1>
+            <h1 className="text-xl font-bold text-white tracking-wide">Monitoradoss<span className="text-emerald-500">.</span></h1>
             <span className="text-xs bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full border border-slate-700">
               {filteredDns.length} / {filteredDns.length}
             </span>
@@ -273,13 +273,13 @@ function App() {
               disabled={isRefreshing}
               className="px-3 py-2 bg-[#21262d] hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center space-x-1"
             >
-              <span>{isRefreshing ? '⏳ A atualizar...' : '🔄 Atualizar'}</span>
+              <span>{isRefreshing ? '⏳ A atualizar...' : 'Atualizar'}</span>
             </button>
             <button
               onClick={() => setModalOpen(true)}
               className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-3.5 py-2 rounded-lg text-xs transition-all shadow"
             >
-              + New
+              Adicionar
             </button>
             <button 
               onClick={handleLogout} 
@@ -294,7 +294,7 @@ function App() {
         <div className="flex justify-between items-center gap-3">
           <input
             type="text"
-            placeholder="Search by name or URL..."
+            placeholder="Pesquisar por Nome OU URL..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full sm:w-80 bg-[#161b22] border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-600 placeholder-slate-500"
@@ -453,10 +453,10 @@ function App() {
       {modalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#161b22] border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 shadow-2xl">
-            <h3 className="text-base font-bold text-white">Add New Monitor</h3>
+            <h3 className="text-base font-bold text-white">Add Monitor</h3>
             <form onSubmit={handleSaveDns} className="space-y-3">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Friendly Name</label>
+                <label className="block text-xs text-slate-400 mb-1">Nome</label>
                 <input 
                   name="name" 
                   placeholder="Ex: Servidor Principal"
@@ -480,13 +480,13 @@ function App() {
                   onClick={() => setModalOpen(false)} 
                   className="px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white"
                 >
-                  Cancel
+                  Cancelar
                 </button>
                 <button 
                   type="submit" 
                   className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg text-xs"
                 >
-                  Save Monitor
+                  Salvar
                 </button>
               </div>
             </form>
