@@ -18,7 +18,6 @@ function App() {
   const [editingDns, setEditingDns] = useState(null);
   const [deleteModalId, setDeleteModalId] = useState(null);
 
-  // Estados seguros para o Histórico / Gráfico
   const [historyDns, setHistoryDns] = useState(null);
   const [dnsLogs, setDnsLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -36,6 +35,20 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const testarLatenciaReal = async (id, url) => {
+    const start = performance.now();
+    try {
+      // Tenta fazer um pedido rápido para medir o tempo de resposta
+      await fetch(url, { mode: 'no-cors', cache: 'no-store' });
+      const end = performance.now();
+      const latencyMs = Math.round(end - start) + 'ms';
+
+      setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
+    } catch (err) {
+      setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
+    }
+  };
+
   const carregarDns = async () => {
     if (!supabase) return;
     const { data, error } = await supabase
@@ -51,10 +64,15 @@ function App() {
         id: item.id,
         name: item.name || '',
         url: item.url || '',
-        status: 'online',
-        latency: '120ms'
+        status: 'checking',
+        latency: 'a testar...'
       }));
       setDnsList(mapped);
+      
+      // Executa o teste real para cada URL de forma assíncrona
+      mapped.forEach(item => {
+        testarLatenciaReal(item.id, item.url);
+      });
     } else {
       setDnsList([]);
     }
@@ -71,10 +89,10 @@ function App() {
     setHistoryDns(dns);
     setLoadingLogs(true);
 
-    // Regista um log leve ao consultar o histórico
+    // Regista o log atual no Supabase
     await supabase.from('dns_logs').insert([{
       monitor_id: dns.id,
-      status: 'online',
+      status: dns.status,
       latency: dns.latency
     }]).catch(() => {});
 
@@ -174,7 +192,7 @@ function App() {
     if (error) {
       alert('Erro ao excluir: ' + error.message);
     } else {
-      setDnsList(prev => (Array.isArray(prev) ? prev : []).filter(d => d.id !== id));
+      setDnsList(prev => prev.filter(d => d.id !== id));
       if (historyDns && historyDns.id === id) setHistoryDns(null);
     }
     setDeleteModalId(null);
@@ -256,7 +274,7 @@ function App() {
             <button 
               onClick={handleLogout} 
               title="Sair"
-              className="p-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl transition-all text-xs font-semibold"
+              className="px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl transition-all text-xs font-semibold"
             >
               🚪 Sair
             </button>
@@ -287,11 +305,11 @@ function App() {
               </div>
             ) : (
               filteredDns.map(item => (
-                <div key={item.id} className="p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-slate-800/20 transition-colors">
+                <div key={item.id} className="p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-slate-800/20 transition-colors">
                   
                   <div className="flex items-center space-x-3 overflow-hidden">
                     <div className="p-2 rounded-xl bg-slate-800 shrink-0 text-lg">
-                      ✅
+                      {item.status === 'online' ? '🟢' : item.status === 'offline' ? '🔴' : '🟡'}
                     </div>
                     <div className="overflow-hidden">
                       <h3 className="font-semibold text-sm text-white truncate">{item.name}</h3>
@@ -301,40 +319,44 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3 border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-800/60">
-                    <div className="text-right">
-                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        online
+                  <div className="flex flex-wrap items-center justify-between md:justify-end w-full md:w-auto gap-3 border-t md:border-t-0 pt-3 md:pt-0 border-slate-800/60">
+                    <div className="text-left md:text-right">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        item.status === 'online' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                        item.status === 'offline' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                        'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                      }`}>
+                        {item.status}
                       </span>
-                      <span className="block text-[11px] text-slate-500 mt-0.5">Latência: {item.latency}</span>
+                      <span className="block text-[11px] text-slate-400 mt-0.5">Latência: {item.latency}</span>
                     </div>
 
                     <div className="flex items-center space-x-1.5">
                       <button 
                         onClick={(e) => abrirHistorico(item, e)} 
                         title="Ver Gráfico de Histórico" 
-                        className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-lg transition-colors text-xs font-semibold"
+                        className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-lg transition-colors text-xs font-semibold"
                       >
                         📊 Histórico
                       </button>
                       <button 
                         onClick={(e) => copiarUrl(item.url, e)} 
                         title="Copiar URL" 
-                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors text-sm"
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors text-xs"
                       >
                         📋
                       </button>
                       <button 
                         onClick={() => { setEditingDns(item); setModalOpen(true); }} 
                         title="Editar" 
-                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors text-sm"
+                        className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors text-xs"
                       >
                         ✏️
                       </button>
                       <button 
                         onClick={() => setDeleteModalId(item.id)} 
                         title="Excluir" 
-                        className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors text-sm"
+                        className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg transition-colors text-xs"
                       >
                         🗑️
                       </button>
@@ -349,7 +371,6 @@ function App() {
 
       </div>
 
-      {/* Modal de Histórico e Gráfico UptimeRobot */}
       {historyDns && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#0d1322] border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-6 shadow-2xl">
@@ -371,15 +392,11 @@ function App() {
 
             <div className="bg-[#111827] border border-slate-800 p-4 rounded-xl space-y-3">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400">Disponibilidade (Uptime):</span>
-                <span className="text-emerald-400 font-bold text-sm">100.00%</span>
+                <span className="text-slate-400">Estado Atual:</span>
+                <span className="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-bold uppercase border border-emerald-500/20">{historyDns.status}</span>
               </div>
               <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400">Estado:</span>
-                <span className="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-bold border border-emerald-500/20">ONLINE</span>
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400">Latência Registada:</span>
+                <span className="text-slate-400">Latência Atual:</span>
                 <span className="text-white font-medium">{historyDns.latency}</span>
               </div>
             </div>
@@ -485,7 +502,7 @@ function App() {
                 Cancelar
               </button>
               <button 
-                onClick={() => handleDeleteDns(deleteModalId)} 
+                onClick={(e) => handleDeleteDns(deleteModalId, e)} 
                 className="bg-rose-600 hover:bg-rose-500 text-white font-medium px-3.5 py-1.5 rounded-xl text-xs shadow-lg shadow-rose-600/20"
               >
                 Excluir
