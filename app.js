@@ -38,69 +38,29 @@ function App() {
   const testarLatenciaReal = async (id, url) => {
     if (!url) return;
     const start = performance.now();
-
-    // Se for HTTP, testamos através de um pedido de imagem/favicon para contornar o bloqueio de CORS do fetch
     const isHttp = url.toLowerCase().trim().startsWith('http://');
 
-    if (isHttp) {
-      let settled = false;
-      return new Promise((resolve) => {
-        const img = new Image();
+    try {
+      if (isHttp) {
+        // Para URLs HTTP a partir de uma página HTTPS, usamos um proxy leve de teste para medir o tempo real sem bloqueios do browser
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        const response = await fetch(proxyUrl, { cache: 'no-store' });
         
-        const timeout = setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
-            resolve();
-          }
-        }, 5000); // 5 segundos de timeout
-
-        img.onload = () => {
-          if (!settled) {
-            settled = true;
-            clearTimeout(timeout);
-            const end = performance.now();
-            const latencyMs = Math.round(end - start) + 'ms';
-            setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
-            resolve();
-          }
-        };
-
-        img.onerror = () => {
-          // Mesmo que dê erro de CORS na imagem, se o servidor respondeu algo, podemos considerá-lo ativo ou testar via fetch mode no-cors alternativo
-          if (!settled) {
-            settled = true;
-            clearTimeout(timeout);
-            // Tentativa secundária com fetch no-cors para http
-            fetch(url, { mode: 'no-cors', cache: 'no-store' }).then(() => {
-              const end = performance.now();
-              const latencyMs = Math.round(end - start) + 'ms';
-              setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
-            }).catch(() => {
-              setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
-            });
-            resolve();
-          }
-        };
-
-        // Aponta para o favicon do domínio para testar a conectividade real
-        try {
-          const parsedUrl = new URL(url);
-          img.src = `${parsedUrl.protocol}//${parsedUrl.host}/favicon.ico?t=${Date.now()}`;
-        } catch (e) {
-          img.src = `${url}/favicon.ico?t=${Date.now()}`;
+        if (response.ok || response.status < 500) {
+          const end = performance.now();
+          const latencyMs = Math.round(end - start) + 'ms';
+          setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
+        } else {
+          throw new Error('Offline');
         }
-      });
-    } else {
-      try {
+      } else {
         await fetch(url, { mode: 'no-cors', cache: 'no-store' });
         const end = performance.now();
         const latencyMs = Math.round(end - start) + 'ms';
-
         setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
-      } catch (err) {
-        setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
       }
+    } catch (err) {
+      setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
     }
   };
 
