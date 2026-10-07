@@ -211,7 +211,7 @@ function App() {
       <div className="flex min-h-screen items-center justify-center bg-[#0d1117] p-4 font-sans">
         <div className="w-full max-w-md bg-[#161b22] border border-slate-800 rounded-xl p-6 sm:p-8 shadow-2xl space-y-6">
           <div className="text-center space-y-2">
-            <h1 className="text-2xl font-bold text-white tracking-wider">Monitorados<span className="text-emerald-500">.</span></h1>
+            <h1 className="text-2xl font-bold text-white tracking-wider">Monitores<span className="text-emerald-500">.</span></h1>
             <p className="text-xs text-slate-400">Faça login para gerir o painel</p>
           </div>
 
