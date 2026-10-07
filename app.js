@@ -1,8 +1,8 @@
 // ==========================================
 // CONFIGURAÇÃO DO SUPABASE
 // ==========================================
-const supabaseUrl = 'SUA_URL_DO_SUPABASE';
-const supabaseAnonKey = 'SUA_CHAVE_ANON_DO_SUPABASE';
+const supabaseUrl = 'https://lokjdzebgkvibvppbkty.supabase.co';
+const supabaseAnonKey = 'sb_publishable_9VrPiNpnt69qZD8_WE31Mw_119MrNDf';
 const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
 
 const { useState, useEffect } = React;
