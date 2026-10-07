@@ -19,7 +19,7 @@ function App() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [globalInterval, setGlobalInterval] = useState(localStorage.getItem('global_check_interval') || '5');
+  const [globalInterval, setGlobalInterval] = useState(() => localStorage.getItem('global_check_interval') || '5');
 
   const [historyDns, setHistoryDns] = useState(null);
   const [dnsLogs, setDnsLogs] = useState([]);
@@ -65,10 +65,9 @@ function App() {
           let statusStr = upMatch ? (upMatch.status === 2 ? 'online' : 'offline') : 'online';
           let uptimePct = upMatch && upMatch.custom_uptime_ratio ? parseFloat(upMatch.custom_uptime_ratio).toFixed(0) + '%' : '100%';
           
-          let logs = upMatch && upMatch.logs && upMatch.logs.length > 0 ? upMatch.logs : Array.from({ length: 25 }).map((_, i) => ({
+          let logs = upMatch && upMatch.logs && upMatch.logs.length > 0 ? upMatch.logs : Array.from({ length: 25 }).map(() => ({
             type: 1,
-            datetime: Math.floor(Date.now() / 1000) - (i * 3600),
-            duration: 0
+            datetime: Math.floor(Date.now() / 1000)
           }));
 
           const intervalDisplay = supItem.interval ? `${supItem.interval} min` : `${globalInterval} min`;
@@ -102,10 +101,9 @@ function App() {
       type: 'HTTP',
       uptime: '100%',
       durationText: 'Ativo',
-      rawLogs: Array.from({ length: 25 }).map((_, i) => ({
+      rawLogs: Array.from({ length: 25 }).map(() => ({
         type: 1,
-        datetime: Math.floor(Date.now() / 1000) - (i * 3600),
-        duration: 0
+        datetime: Math.floor(Date.now() / 1000)
       }))
     }));
     setDnsList(fallbackMapped);
@@ -127,13 +125,12 @@ function App() {
       const logsMapped = dns.rawLogs.slice(0, 30).map((l, idx) => ({
         id: idx,
         status: l.type === 1 ? 'online' : 'offline',
-        latency: l.duration ? l.duration + 's' : '-',
         created_at: new Date((l.datetime || Date.now() / 1000) * 1000).toLocaleString()
       }));
       setDnsLogs(logsMapped);
     } else {
       setDnsLogs([
-        { id: '1', status: 'online', latency: '40ms', created_at: new Date().toLocaleString() }
+        { id: '1', status: 'online', created_at: new Date().toLocaleString() }
       ]);
     }
     setLoadingLogs(false);
@@ -295,7 +292,6 @@ function App() {
               Adicionar
             </button>
             
-            {/* Botão de Configurações com ícone de engrenagem */}
             <button 
               onClick={() => setSettingsOpen(true)} 
               title="Configurações"
@@ -318,3 +314,148 @@ function App() {
             type="text"
             placeholder="Pesquisar por Nome OU URL..."
             value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full sm:w-80 bg-[#161b22] border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-slate-600 placeholder-slate-500"
+          />
+        </div>
+
+        <div className="bg-[#161b22] border border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-800/80">
+          {filteredDns.length === 0 ? (
+            <div className="py-12 text-center text-slate-500 text-xs">
+              Nenhum monitor encontrado.
+            </div>
+          ) : (
+            filteredDns.map(item => (
+              <div 
+                key={item.id} 
+                onClick={(e) => abrirHistorico(item, e)}
+                className="p-3.5 sm:px-5 sm:py-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:bg-[#1f242c] transition-colors cursor-pointer group"
+              >
+                
+                <div className="flex items-center space-x-3 overflow-hidden">
+                  <div className={`w-3 h-3 rounded-full shrink-0 ${item.status === 'online' ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50' : 'bg-rose-500 shadow-lg shadow-rose-500/50'}`}></div>
+                  <div className="overflow-hidden space-y-0.5">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-medium text-xs text-white truncate">{item.name}</span>
+                      <span className="text-[10px] bg-[#21262d] text-slate-400 px-1.5 py-0.5 rounded border border-slate-700 uppercase font-mono">{item.type}</span>
+                    </div>
+                    <div className="flex items-center space-x-2 text-[11px] text-slate-400">
+                      <span className="truncate max-w-[220px] sm:max-w-sm">{item.url}</span>
+                      <span>•</span>
+                      <span className="text-slate-500">{item.durationText}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between md:justify-end w-full md:w-auto gap-6 border-t md:border-t-0 pt-2 md:pt-0 border-slate-800">
+                  
+                  <div className="text-[11px] text-slate-400 flex items-center space-x-1">
+                    <span>⏱️</span>
+                    <span>{item.interval}</span>
+                  </div>
+
+                  <div className="flex items-center space-x-[2px]">
+                    {item.rawLogs && item.rawLogs.slice(0, 28).map((log, lIdx) => {
+                      const logDate = new Date((log.datetime || Date.now() / 1000) * 1000).toLocaleString();
+                      const statusText = log.type === 1 ? 'Online (100%)' : 'Offline';
+                      return (
+                        <div 
+                          key={lIdx}
+                          title={`${logDate} - ${statusText}`}
+                          className={`w-1.5 h-6 rounded-[1px] transition-all hover:opacity-80 ${
+                            log.type === 1 ? 'bg-emerald-500' : 'bg-rose-500'
+                          }`}
+                        ></div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center space-x-4">
+                    <span className="text-xs font-semibold text-slate-200 w-10 text-right">{item.uptime}</span>
+                    
+                    <div className="flex items-center space-x-1" onClick={(e) => e.stopPropagation()}>
+                      <button 
+                        onClick={(e) => copiarUrl(item.url, e)} 
+                        title="Copiar URL" 
+                        className="p-1.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 text-xs"
+                      >
+                        📋
+                      </button>
+                      <button 
+                        onClick={(e) => handleDeleteDns(item, e)} 
+                        title="Excluir" 
+                        className="p-1.5 text-rose-400 hover:text-rose-300 rounded hover:bg-slate-800 text-xs"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+            ))
+          )}
+        </div>
+
+      </div>
+
+      {settingsOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#161b22] border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+            <h3 className="text-base font-bold text-white flex items-center gap-2">
+              <span>⚙️</span> Configurações do Sistema
+            </h3>
+            <form onSubmit={handleSaveSettings} className="space-y-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Intervalo Padrão de Verificação</label>
+                <select 
+                  name="globalInterval" 
+                  defaultValue={globalInterval}
+                  className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="1">1 minuto</option>
+                  <option value="5">5 minutos</option>
+                  <option value="15">15 minutos</option>
+                  <option value="30">30 minutos</option>
+                  <option value="60">1 hora</option>
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">Define o tempo de intervalo aplicado aos monitores.</p>
+              </div>
+              <div className="flex justify-end space-x-2 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setSettingsOpen(false)} 
+                  className="px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg text-xs"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {historyDns && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#161b22] border border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-6 shadow-2xl">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">Detalhes do Monitor</span>
+                <h3 className="text-lg font-bold text-white mt-1">{historyDns.name}</h3>
+                <a href={historyDns.url} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:underline">
+                  {historyDns.url}
+                </a>
+              </div>
+              <button 
+                onClick={() => setHistoryDns(null)} 
+                className="text-slate-400 hover:text-white bg-[#21262d] px-3 py-1 rounded text-xs"
+              >
+                ✕
+              </button>
