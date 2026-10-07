@@ -1,6 +1,5 @@
 const { useState, useEffect } = React;
 
-// Inicialização segura do Supabase
 const supabaseUrl = 'https://lokjdzebgkvibvppbkty.supabase.co';
 const supabaseAnonKey = 'sb_publishable_9VrPiNpnt69qZD8_WE31Mw_119MrNDf';
 const supabase = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseAnonKey) : null;
@@ -43,7 +42,8 @@ function App() {
 
     if (error) {
       console.error('Erro ao buscar DNS:', error);
-    } else if (data) {
+      setDnsList([]);
+    } else if (data && Array.isArray(data)) {
       const mapped = data.map(item => ({
         id: item.id,
         name: item.name || '',
@@ -53,6 +53,8 @@ function App() {
       }));
       setDnsList(mapped);
       mapped.forEach(item => testarStatusUrl(item.id, item.url));
+    } else {
+      setDnsList([]);
     }
     setLoadingDns(false);
   };
@@ -67,7 +69,7 @@ function App() {
     if (window.lucide) {
       window.lucide.createIcons();
     }
-  }, [session, dnsList, modalOpen, deleteModalId, searchTerm]);
+  });
 
   const testarStatusUrl = async (id, url) => {
     const startTime = performance.now();
@@ -76,15 +78,16 @@ function App() {
       const endTime = performance.now();
       const latencyMs = Math.round(endTime - startTime) + 'ms';
 
-      setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
+      setDnsList(prev => (Array.isArray(prev) ? prev : []).map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
     } catch (err) {
-      setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
+      setDnsList(prev => (Array.isArray(prev) ? prev : []).map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
     }
   };
 
   const testarTodasAsUrls = () => {
+    if (!Array.isArray(dnsList)) return;
     dnsList.forEach(item => {
-      setDnsList(prev => prev.map(d => d.id === item.id ? { ...d, status: 'checking', latency: '-' } : d));
+      setDnsList(prev => (Array.isArray(prev) ? prev : []).map(d => d.id === item.id ? { ...d, status: 'checking', latency: '-' } : d));
       testarStatusUrl(item.id, item.url);
     });
   };
@@ -168,15 +171,17 @@ function App() {
     if (error) {
       alert('Erro ao excluir: ' + error.message);
     } else {
-      setDnsList(dnsList.filter(d => d.id !== id));
+      setDnsList(prev => (Array.isArray(prev) ? prev : []).filter(d => d.id !== id));
     }
     setDeleteModalId(null);
   };
 
-  const filteredDns = dnsList.filter(d => 
-    d.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    d.url.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const safeDnsList = Array.isArray(dnsList) ? dnsList : [];
+  const filteredDns = safeDnsList.filter(d => {
+    const nameMatch = d && d.name ? d.name.toLowerCase().includes(searchTerm.toLowerCase()) : false;
+    const urlMatch = d && d.url ? d.url.toLowerCase().includes(searchTerm.toLowerCase()) : false;
+    return nameMatch || urlMatch;
+  });
 
   if (!session) {
     return (
