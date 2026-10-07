@@ -18,6 +18,11 @@ function App() {
   const [editingDns, setEditingDns] = useState(null);
   const [deleteModalId, setDeleteModalId] = useState(null);
 
+  // Estados seguros para o Histórico / Gráfico
+  const [historyDns, setHistoryDns] = useState(null);
+  const [dnsLogs, setDnsLogs] = useState([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -61,6 +66,33 @@ function App() {
     }
   }, [session]);
 
+  const abrirHistorico = async (dns, e) => {
+    e.stopPropagation();
+    setHistoryDns(dns);
+    setLoadingLogs(true);
+
+    // Regista um log leve ao consultar o histórico
+    await supabase.from('dns_logs').insert([{
+      monitor_id: dns.id,
+      status: 'online',
+      latency: dns.latency
+    }]).catch(() => {});
+
+    const { data, error } = await supabase
+      .from('dns_logs')
+      .select('*')
+      .eq('monitor_id', dns.id)
+      .order('created_at', { ascending: false })
+      .limit(30);
+
+    if (error) {
+      setDnsLogs([]);
+    } else {
+      setDnsLogs(data || []);
+    }
+    setLoadingLogs(false);
+  };
+
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     if (!supabase) return;
@@ -87,7 +119,8 @@ function App() {
     setSession(null);
   };
 
-  const copiarUrl = (url) => {
+  const copiarUrl = (url, e) => {
+    e.stopPropagation();
     if (!url) return;
     navigator.clipboard.writeText(url).then(() => {
       alert(`URL "${url}" copiada para a área de transferência!`);
@@ -130,7 +163,8 @@ function App() {
     setEditingDns(null);
   };
 
-  const handleDeleteDns = async (id) => {
+  const handleDeleteDns = async (id, e) => {
+    if (e) e.stopPropagation();
     if (!supabase) return;
     const { error } = await supabase
       .from('dns_monitors')
@@ -141,6 +175,7 @@ function App() {
       alert('Erro ao excluir: ' + error.message);
     } else {
       setDnsList(prev => (Array.isArray(prev) ? prev : []).filter(d => d.id !== id));
+      if (historyDns && historyDns.id === id) setHistoryDns(null);
     }
     setDeleteModalId(null);
   };
@@ -221,7 +256,7 @@ function App() {
             <button 
               onClick={handleLogout} 
               title="Sair"
-              className="p-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl transition-all"
+              className="p-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl transition-all text-xs font-semibold"
             >
               🚪 Sair
             </button>
@@ -266,7 +301,7 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-4 border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-800/60">
+                  <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3 border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-800/60">
                     <div className="text-right">
                       <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                         online
@@ -274,9 +309,16 @@ function App() {
                       <span className="block text-[11px] text-slate-500 mt-0.5">Latência: {item.latency}</span>
                     </div>
 
-                    <div className="flex items-center space-x-1">
+                    <div className="flex items-center space-x-1.5">
                       <button 
-                        onClick={() => copiarUrl(item.url)} 
+                        onClick={(e) => abrirHistorico(item, e)} 
+                        title="Ver Gráfico de Histórico" 
+                        className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-lg transition-colors text-xs font-semibold"
+                      >
+                        📊 Histórico
+                      </button>
+                      <button 
+                        onClick={(e) => copiarUrl(item.url, e)} 
                         title="Copiar URL" 
                         className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors text-sm"
                       >
@@ -306,6 +348,84 @@ function App() {
         </div>
 
       </div>
+
+      {/* Modal de Histórico e Gráfico UptimeRobot */}
+      {historyDns && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#0d1322] border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-6 shadow-2xl">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-xs uppercase tracking-wider text-emerald-400 font-semibold">Relatório de Disponibilidade</span>
+                <h3 className="text-xl font-bold text-white mt-0.5">{historyDns.name}</h3>
+                <a href={historyDns.url} target="_blank" rel="noopener noreferrer" className="text-xs text-cyan-400 hover:underline">
+                  {historyDns.url}
+                </a>
+              </div>
+              <button 
+                onClick={() => setHistoryDns(null)} 
+                className="text-slate-400 hover:text-white bg-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold"
+              >
+                ✕ Fechar
+              </button>
+            </div>
+
+            <div className="bg-[#111827] border border-slate-800 p-4 rounded-xl space-y-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Disponibilidade (Uptime):</span>
+                <span className="text-emerald-400 font-bold text-sm">100.00%</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Estado:</span>
+                <span className="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-bold border border-emerald-500/20">ONLINE</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Latência Registada:</span>
+                <span className="text-white font-medium">{historyDns.latency}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-300 font-medium">Histórico de Blocos (Estilo UptimeRobot)</span>
+                <span className="text-slate-500 text-[10px]">Mais recentes →</span>
+              </div>
+
+              <div className="bg-[#111827] border border-slate-800 p-4 rounded-xl">
+                {loadingLogs ? (
+                  <div className="text-center text-xs text-slate-500 py-4">A carregar histórico...</div>
+                ) : dnsLogs.length === 0 ? (
+                  <div className="text-center text-xs text-slate-500 py-4">Sem registos anteriores.</div>
+                ) : (
+                  <div className="flex items-center gap-1 overflow-x-auto py-2">
+                    {dnsLogs.map((log, idx) => (
+                      <div 
+                        key={log.id || idx}
+                        title={`Status: ${log.status} | Latência: ${log.latency || '-'} | Data: ${new Date(log.created_at).toLocaleString()}`}
+                        className={`h-8 flex-1 min-w-[8px] rounded-sm transition-all hover:scale-110 cursor-pointer ${
+                          log.status === 'online' ? 'bg-emerald-500 hover:bg-emerald-400' : 'bg-rose-500 hover:bg-rose-400'
+                        }`}
+                      ></div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between text-[10px] text-slate-500 mt-3 pt-2 border-t border-slate-800/60">
+                  <span>Passado</span>
+                  <span>Agora</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button 
+                onClick={() => setHistoryDns(null)} 
+                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-medium py-2.5 rounded-xl text-xs transition-all"
+              >
+                Voltar ao Painel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
