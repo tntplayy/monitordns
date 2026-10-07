@@ -39,7 +39,6 @@ function App() {
     setIsRefreshing(true);
     let monitorsFromSupabase = [];
 
-    // 1. Primeiro busca do Supabase para garantir que exibe sempre o que o utilizador cadastrou
     if (supabase) {
       const { data } = await supabase.from('dns_monitors').select('*').order('created_at', { ascending: false });
       if (data && Array.isArray(data)) {
@@ -47,7 +46,6 @@ function App() {
       }
     }
 
-    // 2. Tenta enriquecer com dados do UptimeRobot se possível
     try {
       const body = `api_key=${UPTIME_API_KEY}&format=json&logs=1&response_times=1&custom_uptime_ratios=30`;
       const res = await fetch('https://api.uptimerobot.com/v2/getMonitors', {
@@ -59,8 +57,7 @@ function App() {
       
       if (data && data.stat === 'ok' && Array.isArray(data.monitors)) {
         const mapped = monitorsFromSupabase.map(supItem => {
-          // Procura correspondência no UptimeRobot pelo URL
-          const upMatch = data.monitors.find(m => m.url.toLowerCase().trim() === supItem.url.toLowerCase().trim());
+          const upMatch = data.monitors.find(m => m.url && supItem.url && m.url.toLowerCase().trim() === supItem.url.toLowerCase().trim());
           
           let statusStr = upMatch ? (upMatch.status === 2 ? 'online' : 'offline') : 'online';
           let uptimePct = upMatch && upMatch.custom_uptime_ratio ? parseFloat(upMatch.custom_uptime_ratio).toFixed(0) + '%' : '100%';
@@ -68,9 +65,8 @@ function App() {
 
           return {
             id: supItem.id.toString(),
-            uptimeId: upMatch ? upMatch.id : null,
-            name: supItem.name,
-            url: supItem.url,
+            name: supItem.name || 'Servidor',
+            url: supItem.url || '',
             status: statusStr,
             type: 'HTTP',
             interval: upMatch ? Math.round(upMatch.interval / 60) + ' min' : '5 min',
@@ -84,15 +80,13 @@ function App() {
         return;
       }
     } catch (err) {
-      console.warn('UptimeRobot indisponível, a usar Supabase puro');
+      console.warn('Erro ao ligar ao UptimeRobot:', err);
     }
 
-    // Fallback caso a API do UptimeRobot falhe por CORS
     const fallbackMapped = monitorsFromSupabase.map(item => ({
       id: item.id.toString(),
-      uptimeId: null,
-      name: item.name,
-      url: item.url,
+      name: item.name || 'Servidor',
+      url: item.url || '',
       status: 'online',
       type: 'HTTP',
       interval: '5 min',
@@ -171,7 +165,6 @@ function App() {
     const name = formData.get('name');
     const url = formData.get('url');
 
-    // Salva diretamente no Supabase para aparecer instantaneamente
     if (supabase) {
       const { error } = await supabase.from('dns_monitors').insert([{ name, url }]);
       if (error) {
@@ -181,7 +174,6 @@ function App() {
     }
 
     setModalOpen(false);
-    e.target.reset();
     carregarDnsUptime();
   };
 
@@ -256,10 +248,9 @@ function App() {
     <div className="min-h-screen bg-[#0d1117] text-[#c9d1d9] font-sans p-4 sm:p-6">
       <div className="max-w-6xl mx-auto space-y-4">
         
-        {/* Topo */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#161b22] border border-slate-800 p-4 rounded-xl gap-4">
           <div className="flex items-center space-x-3">
-            <h1 className="text-xl font-bold text-white tracking-wide">Monitoradoss<span className="text-emerald-500">.</span></h1>
+            <h1 className="text-xl font-bold text-white tracking-wide">Monitorados<span className="text-emerald-500">.</span></h1>
             <span className="text-xs bg-slate-800 text-slate-300 px-2.5 py-1 rounded-full border border-slate-700">
               {filteredDns.length} / {filteredDns.length}
             </span>
@@ -288,7 +279,6 @@ function App() {
           </div>
         </div>
 
-        {/* Barra de Pesquisa */}
         <div className="flex justify-between items-center gap-3">
           <input
             type="text"
@@ -299,7 +289,6 @@ function App() {
           />
         </div>
 
-        {/* Lista de Monitores */}
         <div className="bg-[#161b22] border border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-800/80">
           {filteredDns.length === 0 ? (
             <div className="py-12 text-center text-slate-500 text-xs">
@@ -376,7 +365,6 @@ function App() {
 
       </div>
 
-      {/* Modal de Detalhes / Histórico */}
       {historyDns && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#161b22] border border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-6 shadow-2xl">
@@ -421,4 +409,73 @@ function App() {
                     {dnsLogs.map((log, idx) => (
                       <div 
                         key={idx}
-                        title={`Estado: ${log.status} \vert{} Data:${new Date(log
+                        title={`Estado: ${log.status} | Data: ${new Date(log.created_at).toLocaleString()}`}
+                        className={`h-7 flex-1 min-w-[7px] rounded-[1px] ${log.status === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                      ></div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button 
+                onClick={() => setHistoryDns(null)} 
+                className="w-full bg-[#21262d] hover:bg-slate-700 text-white font-medium py-2 rounded-lg text-xs"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#161b22] border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+            <h3 className="text-base font-bold text-white">Adicionar Monitor</h3>
+            <form onSubmit={handleSaveDns} className="space-y-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Nome</label>
+                <input 
+                  name="name" 
+                  placeholder="Ex: Servidor Principal"
+                  required 
+                  className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">URL (http:// ou https://)</label>
+                <input 
+                  type="url" 
+                  name="url" 
+                  placeholder="https://exemplo.com"
+                  required 
+                  className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
+                />
+              </div>
+              <div className="flex justify-end space-x-2 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setModalOpen(false)} 
+                  className="px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg text-xs"
+                >
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
