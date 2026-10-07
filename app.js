@@ -54,7 +54,6 @@ function App() {
         latency: '-'
       }));
       setDnsList(mapped);
-      // Iniciar teste de status logo após carregar
       mapped.forEach(item => testarStatusUrl(item.id, item.url));
     }
     setLoadingDns(false);
