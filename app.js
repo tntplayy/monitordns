@@ -1,11 +1,9 @@
-// ==========================================
-// CONFIGURAÇÃO DO SUPABASE
-// ==========================================
+const { useState, useEffect } = React;
+
+// Inicialização segura do Supabase
 const supabaseUrl = 'https://lokjdzebgkvibvppbkty.supabase.co';
 const supabaseAnonKey = 'sb_publishable_9VrPiNpnt69qZD8_WE31Mw_119MrNDf';
-const supabase = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
-
-const { useState, useEffect } = React;
+const supabase = window.supabase ? window.supabase.createClient(supabaseUrl, supabaseAnonKey) : null;
 
 function App() {
   const [session, setSession] = useState(null);
@@ -22,8 +20,8 @@ function App() {
   const [editingDns, setEditingDns] = useState(null);
   const [deleteModalId, setDeleteModalId] = useState(null);
 
-  // Verificar sessão do Supabase ao iniciar
   useEffect(() => {
+    if (!supabase) return;
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
@@ -35,8 +33,8 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Carregar lista de DNS do Supabase
   const carregarDns = async () => {
+    if (!supabase) return;
     setLoadingDns(true);
     const { data, error } = await supabase
       .from('dns_monitors')
@@ -65,14 +63,12 @@ function App() {
     }
   }, [session]);
 
-  // Renderizar ícones do Lucide sempre que a tela atualizar
   useEffect(() => {
     if (window.lucide) {
       window.lucide.createIcons();
     }
   }, [session, dnsList, modalOpen, deleteModalId, searchTerm]);
 
-  // Função para testar se a URL está online (estilo Uptime)
   const testarStatusUrl = async (id, url) => {
     const startTime = performance.now();
     try {
@@ -95,6 +91,7 @@ function App() {
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
+    if (!supabase) return;
     setLoginError('');
     setLoadingLogin(true);
 
@@ -113,6 +110,7 @@ function App() {
   };
 
   const handleLogout = async () => {
+    if (!supabase) return;
     await supabase.auth.signOut();
     setSession(null);
   };
@@ -126,6 +124,7 @@ function App() {
 
   const handleSaveDns = async (e) => {
     e.preventDefault();
+    if (!supabase) return;
     const formData = new FormData(e.target);
     const payload = {
       name: formData.get('name') || '',
@@ -160,6 +159,7 @@ function App() {
   };
 
   const handleDeleteDns = async (id) => {
+    if (!supabase) return;
     const { error } = await supabase
       .from('dns_monitors')
       .delete()
@@ -178,7 +178,6 @@ function App() {
     d.url.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // TELA DE LOGIN
   if (!session) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#090d16] p-4 font-sans">
@@ -230,12 +229,10 @@ function App() {
     );
   }
 
-  // PAINEL PRINCIPAL
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 font-sans p-4 sm:p-6 md:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
         
-        {/* CABEÇALHO */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-[#0d1322] border border-slate-800/60 p-5 rounded-2xl gap-4 shadow-xl">
           <div className="flex items-center space-x-3">
             <div className="bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 text-emerald-400">
@@ -265,7 +262,6 @@ function App() {
           </div>
         </div>
 
-        {/* BARRA DE AÇÕES E BUSCA */}
         <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
           <input
             type="text"
@@ -283,7 +279,6 @@ function App() {
           </button>
         </div>
 
-        {/* LISTA DE DNS */}
         <div className="bg-[#0d1322] border border-slate-800/60 rounded-2xl overflow-hidden shadow-xl">
           <div className="divide-y divide-slate-800/40">
             {filteredDns.length === 0 ? (
@@ -353,7 +348,6 @@ function App() {
 
       </div>
 
-      {/* MODAL ADICIONAR / EDITAR */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#0d1322] border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 shadow-2xl">
@@ -400,7 +394,6 @@ function App() {
         </div>
       )}
 
-      {/* MODAL DE EXCLUSÃO */}
       {deleteModalId && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-[#0d1322] border border-slate-800 rounded-2xl w-full max-w-xs p-5 space-y-4 text-center shadow-2xl">
