@@ -61,7 +61,13 @@ function App() {
           
           let statusStr = upMatch ? (upMatch.status === 2 ? 'online' : 'offline') : 'online';
           let uptimePct = upMatch && upMatch.custom_uptime_ratio ? parseFloat(upMatch.custom_uptime_ratio).toFixed(0) + '%' : '100%';
-          let logs = upMatch && upMatch.logs ? upMatch.logs : Array.from({ length: 25 }).map(() => ({ type: 1, datetime: Date.now() / 1000 }));
+          
+          // Gera logs detalhados com datas reais ou simulação horária para os blocos
+          let logs = upMatch && upMatch.logs && upMatch.logs.length > 0 ? upMatch.logs : Array.from({ length: 25 }).map((_, i) => ({
+            type: 1,
+            datetime: Math.floor(Date.now() / 1000) - (i * 3600),
+            duration: 0
+          }));
 
           return {
             id: supItem.id.toString(),
@@ -69,7 +75,7 @@ function App() {
             url: supItem.url || '',
             status: statusStr,
             type: 'HTTP',
-            interval: upMatch ? Math.round(upMatch.interval / 60) + ' min' : '5 min',
+            interval: supItem.interval ? `${supItem.interval} min` : (upMatch ? Math.round(upMatch.interval / 60) + ' min' : '5 min'),
             uptime: uptimePct,
             durationText: 'Ativo',
             rawLogs: logs
@@ -89,10 +95,14 @@ function App() {
       url: item.url || '',
       status: 'online',
       type: 'HTTP',
-      interval: '5 min',
+      interval: item.interval ? `${item.interval} min` : '5 min',
       uptime: '100%',
       durationText: 'Ativo',
-      rawLogs: Array.from({ length: 25 }).map(() => ({ type: 1, datetime: Date.now() / 1000 }))
+      rawLogs: Array.from({ length: 25 }).map((_, i) => ({
+        type: 1,
+        datetime: Math.floor(Date.now() / 1000) - (i * 3600),
+        duration: 0
+      }))
     }));
     setDnsList(fallbackMapped);
     setIsRefreshing(false);
@@ -114,12 +124,12 @@ function App() {
         id: idx,
         status: l.type === 1 ? 'online' : 'offline',
         latency: l.duration ? l.duration + 's' : '-',
-        created_at: new Date((l.datetime || Date.now() / 1000) * 1000).toISOString()
+        created_at: new Date((l.datetime || Date.now() / 1000) * 1000).toLocaleString()
       }));
       setDnsLogs(logsMapped);
     } else {
       setDnsLogs([
-        { id: '1', status: 'online', latency: '40ms', created_at: new Date().toISOString() }
+        { id: '1', status: 'online', latency: '40ms', created_at: new Date().toLocaleString() }
       ]);
     }
     setLoadingLogs(false);
@@ -164,9 +174,10 @@ function App() {
     const formData = new FormData(e.target);
     const name = formData.get('name');
     const url = formData.get('url');
+    const interval = formData.get('interval');
 
     if (supabase) {
-      const { error } = await supabase.from('dns_monitors').insert([{ name, url }]);
+      const { error } = await supabase.from('dns_monitors').insert([{ name, url, interval: parseInt(interval) }]);
       if (error) {
         alert('Erro ao salvar: ' + error.message);
         return;
@@ -324,15 +335,21 @@ function App() {
                     <span>{item.interval}</span>
                   </div>
 
-                  <div className="flex items-center space-x-[2px]" title="Histórico de blocos de disponibilidade">
-                    {item.rawLogs && item.rawLogs.slice(0, 28).map((log, lIdx) => (
-                      <div 
-                        key={lIdx}
-                        className={`w-1.5 h-6 rounded-[1px] transition-all hover:opacity-80 ${
-                          log.type === 1 ? 'bg-emerald-500' : 'bg-rose-500'
-                        }`}
-                      ></div>
-                    ))}
+                  {/* Blocos de Histórico com Tooltip individual de Data e Hora */}
+                  <div className="flex items-center space-x-[2px]">
+                    {item.rawLogs && item.rawLogs.slice(0, 28).map((log, lIdx) => {
+                      const logDate = new Date((log.datetime || Date.now() / 1000) * 1000).toLocaleString();
+                      const statusText = log.type === 1 ? 'Online (100%)' : 'Offline';
+                      return (
+                        <div 
+                          key={lIdx}
+                          title={`${logDate} - ${statusText}`}
+                          className={`w-1.5 h-6 rounded-[1px] transition-all hover:opacity-80 ${
+                            log.type === 1 ? 'bg-emerald-500' : 'bg-rose-500'
+                          }`}
+                        ></div>
+                      );
+                    })}
                   </div>
 
                   <div className="flex items-center space-x-4">
@@ -409,7 +426,7 @@ function App() {
                     {dnsLogs.map((log, idx) => (
                       <div 
                         key={idx}
-                        title={`Estado: ${log.status} | Data: ${new Date(log.created_at).toLocaleString()}`}
+                        title={`Estado: ${log.status} | Data: ${log.created_at}`}
                         className={`h-7 flex-1 min-w-[7px] rounded-[1px] ${log.status === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}
                       ></div>
                     ))}
@@ -453,6 +470,20 @@ function App() {
                   required 
                   className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
                 />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Intervalo de Verificação</label>
+                <select 
+                  name="interval" 
+                  defaultValue="5"
+                  className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="1">1 minuto</option>
+                  <option value="5">5 minutos</option>
+                  <option value="15">15 minutos</option>
+                  <option value="30">30 minutos</option>
+                  <option value="60">1 hora</option>
+                </select>
               </div>
               <div className="flex justify-end space-x-2 pt-2">
                 <button 
