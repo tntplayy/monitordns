@@ -37,25 +37,24 @@ function App() {
 
   const testarLatenciaReal = async (id, url) => {
     if (!url) return;
+    const cleanUrl = url.toLowerCase().trim();
     const start = performance.now();
-    const isHttp = url.toLowerCase().trim().startsWith('http://');
 
-    if (isHttp) {
-      // Para URLs HTTP, usamos um teste rápido de favicon/imagem com timeout de 2 segundos para não travar
-      let finished = false;
+    if (cleanUrl.startsWith('http://')) {
+      // Teste real via imagem invisível para validar se o servidor HTTP realmente responde
+      let settled = false;
       const img = new Image();
 
       const timer = setTimeout(() => {
-        if (!finished) {
-          finished = true;
-          // Se passou o tempo limite, assume online base ou verifica se o domínio responde
-          setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: '120ms (HTTP)' } : item));
+        if (!settled) {
+          settled = true;
+          setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
         }
-      }, 2500);
+      }, 3000);
 
       img.onload = () => {
-        if (!finished) {
-          finished = true;
+        if (!settled) {
+          settled = true;
           clearTimeout(timer);
           const end = performance.now();
           const latencyMs = Math.round(end - start) + 'ms';
@@ -64,31 +63,36 @@ function App() {
       };
 
       img.onerror = () => {
-        if (!finished) {
-          finished = true;
+        if (!settled) {
+          settled = true;
           clearTimeout(timer);
-          // Mesmo com erro de CORS na imagem, o servidor HTTP respondeu ao request físico
-          const end = performance.now();
-          const latencyMs = Math.round(end - start) + 'ms';
-          setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
+          // Se falhou a carregar o favicon mas a rota existe, podemos testar com fetch no-cors
+          fetch(url, { mode: 'no-cors', cache: 'no-store' }).then(() => {
+            const end = performance.now();
+            const latencyMs = Math.round(end - start) + 'ms';
+            setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
+          }).catch(() => {
+            setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
+          });
         }
       };
 
       try {
         img.src = `${url.replace(/\/$/, '')}/favicon.ico?t=${Date.now()}`;
       } catch (e) {
-        setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: '90ms' } : item));
-      }
-    } else {
-      try {
-        await fetch(url, { mode: 'no-cors', cache: 'no-store' });
-        const end = performance.now();
-        const latencyMs = Math.round(end - start) + 'ms';
-
-        setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
-      } catch (err) {
         setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
       }
+      return;
+    }
+
+    try {
+      await fetch(url, { mode: 'no-cors', cache: 'no-store' });
+      const end = performance.now();
+      const latencyMs = Math.round(end - start) + 'ms';
+
+      setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
+    } catch (err) {
+      setDnsList(prev => prev.map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
     }
   };
 
@@ -242,6 +246,7 @@ function App() {
     if (error) {
       alert('Erro ao excluir: ' + error.message);
     } else {
+      // Remove imediatamente da lista local para evitar que continue a aparecer no painel
       setDnsList(prev => prev.filter(d => d.id !== id));
       if (historyDns && historyDns.id === id) setHistoryDns(null);
     }
@@ -321,6 +326,13 @@ function App() {
             </div>
           </div>
           <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
+            <button 
+              onClick={carregarDns} 
+              title="Atualizar Status"
+              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-all text-xs font-semibold"
+            >
+              🔄 Atualizar
+            </button>
             <button 
               onClick={handleLogout} 
               title="Sair"
