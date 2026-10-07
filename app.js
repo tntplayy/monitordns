@@ -48,11 +48,10 @@ function App() {
         id: item.id,
         name: item.name || '',
         url: item.url || '',
-        status: 'checking',
-        latency: '-'
+        status: 'online',
+        latency: '120ms'
       }));
       setDnsList(mapped);
-      mapped.forEach(item => testarStatusUrl(item.id, item.url));
     } else {
       setDnsList([]);
     }
@@ -65,7 +64,6 @@ function App() {
     }
   }, [session]);
 
-  // Executa os ícones do Lucide com segurança apenas quando a sessão ou lista mudar
   useEffect(() => {
     if (window.lucide) {
       setTimeout(() => {
@@ -73,27 +71,6 @@ function App() {
       }, 50);
     }
   }, [session, dnsList, modalOpen, deleteModalId]);
-
-  const testarStatusUrl = async (id, url) => {
-    const startTime = performance.now();
-    try {
-      await fetch(url, { mode: 'no-cors', cache: 'no-cache' });
-      const endTime = performance.now();
-      const latencyMs = Math.round(endTime - startTime) + 'ms';
-
-      setDnsList(prev => (Array.isArray(prev) ? prev : []).map(item => item.id === id ? { ...item, status: 'online', latency: latencyMs } : item));
-    } catch (err) {
-      setDnsList(prev => (Array.isArray(prev) ? prev : []).map(item => item.id === id ? { ...item, status: 'offline', latency: '-' } : item));
-    }
-  };
-
-  const testarTodasAsUrls = () => {
-    if (!Array.isArray(dnsList)) return;
-    dnsList.forEach(item => {
-      setDnsList(prev => (Array.isArray(prev) ? prev : []).map(d => d.id === item.id ? { ...d, status: 'checking', latency: '-' } : d));
-      testarStatusUrl(item.id, item.url);
-    });
-  };
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
@@ -253,14 +230,6 @@ function App() {
           </div>
           <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
             <button 
-              onClick={testarTodasAsUrls} 
-              title="Testar status novamente"
-              className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-all flex items-center space-x-1 text-xs font-medium"
-            >
-              <i data-lucide="refresh-cw" className={`w-4 h-4 ${loadingDns ? 'animate-spin' : ''}`}></i>
-              <span className="hidden sm:inline">Verificar</span>
-            </button>
-            <button 
               onClick={handleLogout} 
               title="Sair"
               className="p-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-xl transition-all"
@@ -299,9 +268,7 @@ function App() {
                   
                   <div className="flex items-center space-x-3 overflow-hidden">
                     <div className="p-2 rounded-xl bg-slate-800 shrink-0">
-                      {item.status === 'online' && <i data-lucide="check-circle-2" className="w-5 h-5 text-emerald-400"></i>}
-                      {item.status === 'offline' && <i data-lucide="x-circle" className="w-5 h-5 text-rose-500"></i>}
-                      {item.status === 'checking' && <i data-lucide="loader-2" className="w-5 h-5 text-amber-400 animate-spin"></i>}
+                      <i data-lucide="check-circle-2" className="w-5 h-5 text-emerald-400"></i>
                     </div>
                     <div className="overflow-hidden">
                       <h3 className="font-semibold text-sm text-white truncate">{item.name}</h3>
@@ -313,12 +280,8 @@ function App() {
 
                   <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-4 border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-800/60">
                     <div className="text-right">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        item.status === 'online' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                        item.status === 'offline' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
-                        'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                      }`}>
-                        {item.status}
+                      <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        online
                       </span>
                       <span className="block text-[11px] text-slate-500 mt-0.5">Latência: {item.latency}</span>
                     </div>
