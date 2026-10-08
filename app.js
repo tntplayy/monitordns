@@ -58,6 +58,9 @@ function App() {
       }
     }
 
+    const intervalMinutes = parseInt(globalInterval) || 5;
+    const intervalSeconds = intervalMinutes * 60;
+
     try {
       const body = `api_key=${UPTIME_API_KEY}&format=json&logs=1&response_times=1&custom_uptime_ratios=30`;
       const res = await fetch('https://api.uptimerobot.com/v2/getMonitors', {
@@ -74,16 +77,18 @@ function App() {
           const statusStr = upMatch ? (upMatch.status === 2 ? 'online' : 'offline') : 'online';
           const uptimePct = upMatch && upMatch.custom_uptime_ratio ? parseFloat(upMatch.custom_uptime_ratio).toFixed(0) + '%' : '100%';
           
-          const logs = upMatch && upMatch.logs && upMatch.logs.length > 0 ? upMatch.logs : Array.from({ length: 25 }).map(() => ({
+          // Gera logs com horários decrescentes baseados no intervalo real
+          const nowSec = Math.floor(Date.now() / 1000);
+          const logs = upMatch && upMatch.logs && upMatch.logs.length > 0 ? upMatch.logs : Array.from({ length: 28 }).map((_, i) => ({
             type: 1,
-            datetime: Math.floor(Date.now() / 1000)
+            datetime: nowSec - ((27 - i) * intervalSeconds)
           }));
 
           return {
             id: supItem.id.toString(),
             name: supItem.name || 'Servidor',
             url: supItem.url || '',
-            interval: `${globalInterval} min`,
+            interval: `${intervalMinutes} min`,
             status: statusStr,
             type: 'HTTP',
             uptime: uptimePct,
@@ -99,18 +104,19 @@ function App() {
       console.warn('UptimeRobot indisponível:', err);
     }
 
+    const nowSec = Math.floor(Date.now() / 1000);
     const fallbackMapped = monitorsFromSupabase.map(item => ({
       id: item.id.toString(),
       name: item.name || 'Servidor',
       url: item.url || '',
-      interval: `${globalInterval} min`,
+      interval: `${intervalMinutes} min`,
       status: 'online',
       type: 'HTTP',
       uptime: '100%',
       durationText: 'Ativo',
-      rawLogs: Array.from({ length: 25 }).map(() => ({
+      rawLogs: Array.from({ length: 28 }).map((_, i) => ({
         type: 1,
-        datetime: Math.floor(Date.now() / 1000)
+        datetime: nowSec - ((27 - i) * intervalSeconds)
       }))
     }));
     setDnsList(fallbackMapped);
@@ -121,7 +127,7 @@ function App() {
     if (session) {
       carregarDnsUptime();
     }
-  }, [session]);
+  }, [session, globalInterval]);
 
   const abrirHistorico = (dns, e) => {
     e.stopPropagation();
@@ -428,7 +434,7 @@ function App() {
                   <option value="30">30 minutos</option>
                   <option value="60">1 hora</option>
                 </select>
-                <p className="text-[11px] text-slate-500 mt-1">Define o intervalo exibido para todos os monitores.</p>
+                <p className="text-[11px] text-slate-500 mt-1">Define o intervalo de tempo entre cada bloco de histórico.</p>
               </div>
               <div className="flex justify-end space-x-2 pt-2">
                 <button 
