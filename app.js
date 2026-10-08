@@ -19,11 +19,16 @@ function App() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [globalInterval, setGlobalInterval] = useState(() => localStorage.getItem('global_check_interval') || '5');
+  const [globalInterval, setGlobalInterval] = useState('5');
 
   const [historyDns, setHistoryDns] = useState(null);
   const [dnsLogs, setDnsLogs] = useState([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
+
+  useEffect(() => {
+    const savedInt = localStorage.getItem('global_check_interval');
+    if (savedInt) setGlobalInterval(savedInt);
+  }, []);
 
   useEffect(() => {
     if (!supabase) return;
@@ -35,7 +40,11 @@ function App() {
       setSession(session);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      if (subscription && subscription.unsubscribe) {
+        subscription.unsubscribe();
+      }
+    };
   }, []);
 
   const carregarDnsUptime = async () => {
@@ -43,7 +52,7 @@ function App() {
     let monitorsFromSupabase = [];
 
     if (supabase) {
-      const { data } = await supabase.from('dns_monitors').select('*').order('created_at', { ascending: false });
+      const { data } = await supabase.from('dns_monitors').select('*');
       if (data && Array.isArray(data)) {
         monitorsFromSupabase = data;
       }
@@ -62,21 +71,19 @@ function App() {
         const mapped = monitorsFromSupabase.map(supItem => {
           const upMatch = data.monitors.find(m => m.url && supItem.url && m.url.toLowerCase().trim() === supItem.url.toLowerCase().trim());
           
-          let statusStr = upMatch ? (upMatch.status === 2 ? 'online' : 'offline') : 'online';
-          let uptimePct = upMatch && upMatch.custom_uptime_ratio ? parseFloat(upMatch.custom_uptime_ratio).toFixed(0) + '%' : '100%';
+          const statusStr = upMatch ? (upMatch.status === 2 ? 'online' : 'offline') : 'online';
+          const uptimePct = upMatch && upMatch.custom_uptime_ratio ? parseFloat(upMatch.custom_uptime_ratio).toFixed(0) + '%' : '100%';
           
-          let logs = upMatch && upMatch.logs && upMatch.logs.length > 0 ? upMatch.logs : Array.from({ length: 25 }).map(() => ({
+          const logs = upMatch && upMatch.logs && upMatch.logs.length > 0 ? upMatch.logs : Array.from({ length: 25 }).map(() => ({
             type: 1,
             datetime: Math.floor(Date.now() / 1000)
           }));
-
-          const intervalDisplay = supItem.interval ? `${supItem.interval} min` : `${globalInterval} min`;
 
           return {
             id: supItem.id.toString(),
             name: supItem.name || 'Servidor',
             url: supItem.url || '',
-            interval: intervalDisplay,
+            interval: `${globalInterval} min`,
             status: statusStr,
             type: 'HTTP',
             uptime: uptimePct,
@@ -89,14 +96,14 @@ function App() {
         return;
       }
     } catch (err) {
-      console.warn('Erro ao ligar ao UptimeRobot:', err);
+      console.warn('UptimeRobot indisponível:', err);
     }
 
     const fallbackMapped = monitorsFromSupabase.map(item => ({
       id: item.id.toString(),
       name: item.name || 'Servidor',
       url: item.url || '',
-      interval: item.interval ? `${item.interval} min` : `${globalInterval} min`,
+      interval: `${globalInterval} min`,
       status: 'online',
       type: 'HTTP',
       uptime: '100%',
@@ -177,7 +184,7 @@ function App() {
     const url = formData.get('url');
 
     if (supabase) {
-      const { error } = await supabase.from('dns_monitors').insert([{ name, url, interval: parseInt(globalInterval) }]);
+      const { error } = await supabase.from('dns_monitors').insert([{ name, url }]);
       if (error) {
         alert('Erro ao salvar: ' + error.message);
         return;
@@ -185,6 +192,7 @@ function App() {
     }
 
     setModalOpen(false);
+    e.target.reset();
     carregarDnsUptime();
   };
 
@@ -408,7 +416,7 @@ function App() {
             </h3>
             <form onSubmit={handleSaveSettings} className="space-y-4">
               <div>
-                <label className="block text-xs text-slate-400 mb-1.5">Intervalo Padrão de Verificação</label>
+                <label className="block text-xs text-slate-400 mb-1.5">Intervalo de Verificação</label>
                 <select 
                   name="globalInterval" 
                   defaultValue={globalInterval}
@@ -420,7 +428,7 @@ function App() {
                   <option value="30">30 minutos</option>
                   <option value="60">1 hora</option>
                 </select>
-                <p className="text-[11px] text-slate-500 mt-1">Define o tempo de intervalo aplicado aos monitores.</p>
+                <p className="text-[11px] text-slate-500 mt-1">Define o intervalo exibido para todos os monitores.</p>
               </div>
               <div className="flex justify-end space-x-2 pt-2">
                 <button 
@@ -459,3 +467,100 @@ function App() {
               >
                 ✕
               </button>
+            </div>
+
+            <div className="bg-[#0d1117] border border-slate-800 p-4 rounded-lg space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Estado Atual:</span>
+                <span className={`font-bold uppercase ${historyDns.status === 'online' ? 'text-emerald-400' : 'text-rose-400'}`}>{historyDns.status}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Disponibilidade (30 dias):</span>
+                <span className="text-white font-semibold">{historyDns.uptime}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Intervalo de Verificação:</span>
+                <span className="text-white">{historyDns.interval}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-xs font-medium text-slate-300">Histórico de Registos</span>
+              <div className="bg-[#0d1117] border border-slate-800 p-4 rounded-lg">
+                {loadingLogs ? (
+                  <div className="text-center text-xs text-slate-500 py-3">A carregar logs...</div>
+                ) : (
+                  <div className="flex items-center gap-1 overflow-x-auto py-2">
+                    {dnsLogs.map((log, idx) => (
+                      <div 
+                        key={idx}
+                        title={`Estado: ${log.status} | Data: ${log.created_at}`}
+                        className={`h-7 flex-1 min-w-[7px] rounded-[1px] ${log.status === 'online' ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                      ></div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button 
+                onClick={() => setHistoryDns(null)} 
+                className="w-full bg-[#21262d] hover:bg-slate-700 text-white font-medium py-2 rounded-lg text-xs"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalOpen && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-[#161b22] border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 shadow-2xl">
+            <h3 className="text-base font-bold text-white">Adicionar Monitor</h3>
+            <form onSubmit={handleSaveDns} className="space-y-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Nome</label>
+                <input 
+                  name="name" 
+                  placeholder="Ex: Servidor Principal"
+                  required 
+                  className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">URL (http:// ou https://)</label>
+                <input 
+                  type="url" 
+                  name="url" 
+                  placeholder="https://exemplo.com"
+                  required 
+                  className="w-full bg-[#0d1117] border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" 
+                />
+              </div>
+              <div className="flex justify-end space-x-2 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setModalOpen(false)} 
+                  className="px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-white"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium px-4 py-2 rounded-lg text-xs"
+                >
+                  Salvar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
