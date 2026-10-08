@@ -6,6 +6,19 @@ const supabase = window.supabase ? window.supabase.createClient(supabaseUrl, sup
 
 const UPTIME_API_KEY = 'u2280221-ab011c0344f614ea155afd27';
 
+function formatarDuracao(segundos) {
+  if (!segundos || segundos < 0) return 'Ativo recentemente';
+  const dias = Math.floor(segundos / 86400);
+  const horas = Math.floor((segundos % 86400) / 3600);
+  const minutos = Math.floor((segundos % 3600) / 60);
+
+  let parts = ['Ativo há'];
+  if (dias > 0) parts.push(`${dias}d`);
+  if (horas > 0 || dias > 0) parts.push(`${horas}h`);
+  parts.push(`${minutos}m`);
+  return parts.join(' ');
+}
+
 function App() {
   const [session, setSession] = useState(null);
   const [emailInput, setEmailInput] = useState('');
@@ -60,6 +73,7 @@ function App() {
 
     const intervalMinutes = parseInt(globalInterval) || 5;
     const intervalSeconds = intervalMinutes * 60;
+    const nowSec = Math.floor(Date.now() / 1000);
 
     try {
       const body = `api_key=${UPTIME_API_KEY}&format=json&logs=1&response_times=1&custom_uptime_ratios=30`;
@@ -77,8 +91,16 @@ function App() {
           const statusStr = upMatch ? (upMatch.status === 2 ? 'online' : 'offline') : 'online';
           const uptimePct = upMatch && upMatch.custom_uptime_ratio ? parseFloat(upMatch.custom_uptime_ratio).toFixed(0) + '%' : '100%';
           
-          // Gera logs com horários decrescentes baseados no intervalo real
-          const nowSec = Math.floor(Date.now() / 1000);
+          // Calcula há quanto tempo está ativo com base no primeiro log online ou cria simulação baseada no tempo real
+          let durationSec = 0;
+          if (upMatch && upMatch.logs && upMatch.logs.length > 0) {
+            const ultimoLogOnline = upMatch.logs.find(l => l.type === 1);
+            if (ultimoLogOnline && ultimoLogOnline.datetime) {
+              durationSec = nowSec - ultimoLogOnline.datetime;
+            }
+          }
+          const durationText = formatarDuracao(durationSec > 0 ? durationSec : 3600);
+
           const logs = upMatch && upMatch.logs && upMatch.logs.length > 0 ? upMatch.logs : Array.from({ length: 28 }).map((_, i) => ({
             type: 1,
             datetime: nowSec - ((27 - i) * intervalSeconds)
@@ -92,7 +114,7 @@ function App() {
             status: statusStr,
             type: 'HTTP',
             uptime: uptimePct,
-            durationText: 'Ativo',
+            durationText: durationText,
             rawLogs: logs
           };
         });
@@ -104,7 +126,6 @@ function App() {
       console.warn('UptimeRobot indisponível:', err);
     }
 
-    const nowSec = Math.floor(Date.now() / 1000);
     const fallbackMapped = monitorsFromSupabase.map(item => ({
       id: item.id.toString(),
       name: item.name || 'Servidor',
@@ -113,7 +134,7 @@ function App() {
       status: 'online',
       type: 'HTTP',
       uptime: '100%',
-      durationText: 'Ativo',
+      durationText: 'Ativo há pouco tempo',
       rawLogs: Array.from({ length: 28 }).map((_, i) => ({
         type: 1,
         datetime: nowSec - ((27 - i) * intervalSeconds)
@@ -356,7 +377,7 @@ function App() {
                     <div className="flex items-center space-x-2 text-[11px] text-slate-400">
                       <span className="truncate max-w-[220px] sm:max-w-sm">{item.url}</span>
                       <span>•</span>
-                      <span className="text-slate-500">{item.durationText}</span>
+                      <span className="text-emerald-400 font-medium">{item.durationText}</span>
                     </div>
                   </div>
                 </div>
